@@ -37,12 +37,17 @@ CRASH SAFEGUARDS:
     would lose curves, or a removed loop leaves stray curves, the edit scope
     is CANCELLED instead of committed - committing a broken shaft sketch is a
     known native-crash path.
-  - Warnings are auto-deleted during every transaction / sketch commit so no
-    failure dialog interrupts an open edit scope.
+  - Failure handling is kept EXACTLY as in the run that succeeded on this
+    machine: no failures preprocessor on plain transactions, and a plain
+    Continue preprocessor only on the sketch commit.
+  - The UI selection is cleared before any editing, and every element is
+    re-fetched by Id right before use; stale references are never reused
+    across regenerations.
   - Openings that belong to a model group are skipped (editing a grouped
     sketch is a known crash path - ungroup first).
-  - Elements are re-fetched by Id before each step; stale references are
-    never reused across regenerations.
+  - BLACK BOX: every step is appended (open/write/close, unbuffered) to
+    %TEMP%/DQT_ShaftSplit.log. After a hard crash the LAST line of that file
+    names the exact operation that died.
 
 SAFETY LIMIT: each SketchEditScope.Commit() carries some crash risk, so a
 single run only fully splits up to MAX_BOUNDARIES_PER_SPLIT boundaries. If a
@@ -63,6 +68,9 @@ from pyrevit import revit, DB, UI, forms
 from System.Collections.Generic import List
 import clr
 clr.AddReference('System.Core')
+import datetime
+import os
+import tempfile
 
 
 def _eid_int(eid):
@@ -87,26 +95,32 @@ def _chunk(seq, size):
         yield seq[i:i + size]
 
 
-class _NoOpFailurePreproc(IFailuresPreprocessor):
-    """Delete warnings so no failure dialog pops while a SketchEditScope is
-    open - a modal dialog during an open edit scope can wedge or crash the
-    commit. (It cannot stop a native crash - only managed failures.)"""
-    def PreprocessFailures(self, failuresAccessor):
-        try:
-            failuresAccessor.DeleteAllWarnings()
-        except:
-            pass
-        return FailureProcessingResult.Continue
+_LOG_PATH = os.path.join(tempfile.gettempdir(), "DQT_ShaftSplit.log")
 
 
-def _set_silent_failures(t):
-    """Attach the warning-swallowing preprocessor to a started transaction."""
+def _log(msg):
+    """Crash-proof black-box log: open/append/close per line so nothing is
+    buffered - after a hard native crash the LAST line in the file names the
+    exact operation that died."""
     try:
-        opts = t.GetFailureHandlingOptions()
-        opts.SetFailuresPreprocessor(_NoOpFailurePreproc())
-        t.SetFailureHandlingOptions(opts)
+        f = open(_LOG_PATH, "a")
+        try:
+            f.write("{} | {}\n".format(
+                datetime.datetime.now().strftime("%H:%M:%S"), msg))
+        finally:
+            f.close()
     except:
         pass
+
+
+class _NoOpFailurePreproc(IFailuresPreprocessor):
+    """Swallow sketch warnings so SketchEditScope.Commit isn't blocked by a
+    dialog. Kept EXACTLY as in the run that succeeded on this machine (no
+    DeleteAllWarnings, no per-transaction attachment) - every extra failure-
+    handling callback is one more native round-trip that can differ from the
+    proven-good configuration."""
+    def PreprocessFailures(self, failuresAccessor):
+        return FailureProcessingResult.Continue
 
 
 def _in_group(elem):
@@ -284,10 +298,10 @@ def copy_one_in_place(opening):
     """Copy-paste the opening in the same place once, in its own transaction.
     Returns the copied shaft opening."""
     copies = []
+    _log("copy: start (src {})".format(_eid_int(opening.Id)))
     t = Transaction(doc, "DQT - Copy shaft in place")
     t.Start()
     try:
-        _set_silent_failures(t)
         ids = List[ElementId]()
         ids.Add(opening.Id)
         new_ids = ElementTransformUtils.CopyElements(doc, ids, XYZ.Zero)
@@ -295,7 +309,10 @@ def copy_one_in_place(opening):
             el = doc.GetElement(nid)
             if is_shaft_opening(el):
                 copies.append(el)
+        _log("copy: CopyElements OK, committing transaction...")
         t.Commit()
+        _log("copy: commit OK -> {}".format(
+            ", ".join(str(_eid_int(c.Id)) for c in copies)))
     except Exception:
         if t.HasStarted() and not t.HasEnded():
             t.RollBack()
@@ -334,6 +351,8 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
     kept loop missing curves, or a removed loop leaving strays) is never
     committed - the edit scope is cancelled instead, because committing an
     invalid shaft sketch can hard-crash Revit."""
+    oid = _eid_int(opening.Id)
+    _log("reduce {}: begin (keep {} loop(s))".format(oid, len(keep_set)))
     sketch = get_sketch(opening)
     if sketch is None:
         raise Exception("opening has no sketch")
@@ -368,20 +387,25 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
                     j, found_boundary.get(j, 0), expected.get(j, 0)))
 
     if not delete_ids:
+        _log("reduce {}: nothing to delete, done".format(oid))
         return kept_symbolic
 
+    _log("reduce {}: {} curve(s) to delete, SketchEditScope.Start...".format(
+        oid, len(delete_ids)))
     ses = SketchEditScope(doc, "DQT - Reduce shaft opening")
     ses.Start(sketch.Id)
+    _log("reduce {}: scope started, delete transaction...".format(oid))
     t = Transaction(doc, "DQT - Delete extra loops")
     t.Start()
     try:
-        _set_silent_failures(t)
         for did in delete_ids:
             try:
                 doc.Delete(did)
             except Exception as ex:
                 print("    (could not delete curve {}: {})".format(_eid_int(did), ex))
+        _log("reduce {}: deletes done, committing transaction...".format(oid))
         t.Commit()
+        _log("reduce {}: delete transaction OK".format(oid))
     except Exception:
         if t.HasStarted() and not t.HasEnded():
             t.RollBack()
@@ -414,6 +438,7 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
         raise Exception("sketch invalid after deleting ({}) - edit scope "
                         "cancelled instead of committed".format(bad))
 
+    _log("reduce {}: post-check OK, SketchEditScope.Commit >>>".format(oid))
     try:
         ses.Commit(_NoOpFailurePreproc())   # <-- SketchEditScope commit (crash risk)
     except Exception:
@@ -422,6 +447,7 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
         except:
             pass
         raise
+    _log("reduce {}: SketchEditScope.Commit OK".format(oid))
     return kept_symbolic
 
 
@@ -512,6 +538,9 @@ def split_shaft(opening):
     main_indices, holes_of = analyze_loops(curve_loops)
     print("\n  Loops: {} total, {} main boundary(ies), {} hole(s)".format(
         len(curve_loops), len(main_indices), len(curve_loops) - len(main_indices)))
+    _log("opening {}: {} loop(s), {} main, {} hole(s)".format(
+        _eid_int(opening.Id), len(curve_loops), len(main_indices),
+        len(curve_loops) - len(main_indices)))
 
     if len(main_indices) <= 1:
         print("  Only one main boundary - nothing to split")
@@ -543,7 +572,7 @@ def main():
         if not proceed:
             return
 
-        selected_openings = []
+        selected_ids = []
         try:
             refs = uidoc.Selection.PickObjects(
                 ObjectType.Element,
@@ -554,17 +583,30 @@ def main():
         for ref in refs:
             el = doc.GetElement(ref.ElementId)
             if is_shaft_opening(el):
-                selected_openings.append(el)
+                selected_ids.append(ref.ElementId)
             else:
                 print("Skipping non-shaft element (ID {})".format(_eid_int(ref.ElementId)))
 
-        if not selected_openings:
+        if not selected_ids:
             forms.alert("No shaft openings selected.", exitscript=True)
+
+        # Clear the UI selection before editing - deleting / sketch-editing
+        # elements that sit in the active selection set is one more native
+        # code path we don't need during the run.
+        try:
+            uidoc.Selection.SetElementIds(List[ElementId]())
+        except:
+            pass
 
         print("\n" + "=" * 60)
         print("SPLIT SHAFT OPENING (copy-paste method) - {} opening(s)".format(
-            len(selected_openings)))
+            len(selected_ids)))
+        print("Black-box log: {}".format(_LOG_PATH))
+        print("(if Revit crashes, the LAST line of that file names the exact")
+        print(" operation that died - please send it to DQT)")
         print("=" * 60)
+        _log("=" * 50)
+        _log("RUN start - {} opening(s) selected".format(len(selected_ids)))
 
         total_result = 0
         total_symbolic = 0
@@ -572,11 +614,20 @@ def main():
         failed = 0
         batch_ids = []
 
-        for idx, opening in enumerate(selected_openings):
+        for idx, oid in enumerate(selected_ids):
             print("\n" + "-" * 60)
             print("Processing shaft opening {}/{} (ID {})".format(
-                idx + 1, len(selected_openings), _eid_int(opening.Id)))
+                idx + 1, len(selected_ids), _eid_int(oid)))
             print("-" * 60)
+            _log("opening {} ({}/{}): processing...".format(
+                _eid_int(oid), idx + 1, len(selected_ids)))
+            # Re-fetch fresh by Id - never reuse a wrapper that survived the
+            # previous opening's commits/regenerations.
+            opening = doc.GetElement(oid)
+            if opening is None or not is_shaft_opening(opening):
+                print("  Opening no longer valid - skipping")
+                _log("opening {}: no longer valid, skipped".format(_eid_int(oid)))
+                continue
             try:
                 result = split_shaft(opening)
                 if result:
@@ -592,17 +643,20 @@ def main():
                     else:
                         print("SUCCESS: {} region opening(s), {} symbolic line(s) kept".format(
                             len(result_openings), symbolic_kept))
+                _log("opening {}: DONE".format(_eid_int(oid)))
             except Exception as e:
                 failed += 1
                 import traceback
                 print("FAILED: {}".format(e))
                 print(traceback.format_exc())
+                _log("opening {}: FAILED (managed): {}".format(_eid_int(oid), e))
                 continue
 
+        _log("RUN end - {} ok, {} failed".format(successful, failed))
         print("\n" + "=" * 60)
         print("SUMMARY")
         print("=" * 60)
-        print("Shaft openings processed : {}".format(len(selected_openings)))
+        print("Shaft openings processed : {}".format(len(selected_ids)))
         print("Successful splits        : {}".format(successful))
         print("Failed splits            : {}".format(failed))
         print("Resulting shaft openings : {}".format(total_result))
@@ -619,7 +673,7 @@ def main():
             "Failed: {}\n"
             "Resulting shaft openings: {}\n"
             "Symbolic lines preserved (native): {}"
-        ).format(len(selected_openings), successful, failed, total_result, total_symbolic)
+        ).format(len(selected_ids), successful, failed, total_result, total_symbolic)
         if batch_ids:
             msg += (
                 "\n\nSafety limit reached (max {} boundaries/run): {} of the "
