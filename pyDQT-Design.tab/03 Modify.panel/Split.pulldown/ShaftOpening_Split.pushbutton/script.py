@@ -27,6 +27,13 @@ unrecoverable native crash that Python try/except cannot catch). SAVE the model
 before running. Everything is wrapped so that the ORIGINAL opening is never
 deleted - if a crash happens mid-run, closing without saving loses nothing.
 
+SAFETY LIMIT: each SketchEditScope.Commit() carries some crash risk, so a
+single run only fully splits up to MAX_BOUNDARIES_PER_SPLIT boundaries. If a
+shaft has more than that (e.g. 100), it is instead divided into intermediate
+multi-boundary openings of at most MAX_BOUNDARIES_PER_SPLIT boundaries each
+(e.g. 100 -> 5 openings of 20). Re-run this tool on those intermediate
+openings to finish splitting them (pass 2, now under the limit).
+
 Dang Quoc Truong - DQT (c) 2026
 """
 
@@ -53,6 +60,14 @@ doc = revit.doc
 uidoc = revit.uidoc
 
 _ON_LOOP_TOL = 1e-4   # feet - midpoint-on-boundary tolerance
+
+MAX_BOUNDARIES_PER_SPLIT = 20   # hard cap on boundaries fully split in one run
+
+
+def _chunk(seq, size):
+    """Yield successive `size`-length slices of seq."""
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
 
 
 class _NoOpFailurePreproc(IFailuresPreprocessor):
@@ -296,24 +311,9 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
     return kept_symbolic
 
 
-def split_shaft(opening):
-    """Split one multi-boundary shaft opening. Returns
-    (result_openings, symbolic_kept) or None if nothing to split."""
-    sketch = get_sketch(opening)
-    curve_loops = get_curve_loops_from_sketch(sketch)
-    if len(curve_loops) <= 1:
-        print("  Shaft opening has only one boundary - skipping")
-        return None
-
-    main_indices, holes_of = analyze_loops(curve_loops)
-    print("\n  Loops: {} total, {} main boundary(ies), {} hole(s)".format(
-        len(curve_loops), len(main_indices), len(curve_loops) - len(main_indices)))
-
-    if len(main_indices) <= 1:
-        print("  Only one main boundary - nothing to split")
-        return None
-
-    # One opening per main boundary; reuse the original for the first region.
+def _split_into_singles(opening, main_indices, holes_of, curve_loops):
+    """One opening per main boundary - fully split, each keeps its real
+    Symbolic Lines. Reuses the original opening for the first region."""
     print("  Copy-pasting {} in-place copy(ies)...".format(len(main_indices) - 1))
     copies = copy_in_place(opening, len(main_indices) - 1)
     if len(copies) != len(main_indices) - 1:
@@ -333,7 +333,70 @@ def split_shaft(opening):
         result_openings.append(op)
         print("    -> kept {} symbolic line(s)".format(kept))
 
-    return (result_openings, symbolic_kept)
+    return result_openings, symbolic_kept, False
+
+
+def _split_into_groups(opening, main_indices, holes_of, curve_loops):
+    """Too many boundaries for one safe run: instead of fully splitting all of
+    them, produce one intermediate opening per batch of up to
+    MAX_BOUNDARIES_PER_SPLIT boundaries (still multi-boundary). The caller
+    must re-run Split on each of these to finish (pass 2, now under the
+    limit)."""
+    groups = list(_chunk(main_indices, MAX_BOUNDARIES_PER_SPLIT))
+    print("  {} boundaries > limit of {} - grouping into {} intermediate "
+          "opening(s) of up to {} boundaries each (run Split again on each "
+          "to finish)...".format(
+              len(main_indices), MAX_BOUNDARIES_PER_SPLIT, len(groups),
+              MAX_BOUNDARIES_PER_SPLIT))
+
+    print("  Copy-pasting {} in-place copy(ies)...".format(len(groups) - 1))
+    copies = copy_in_place(opening, len(groups) - 1)
+    if len(copies) != len(groups) - 1:
+        raise Exception("expected {} copies, got {}".format(
+            len(groups) - 1, len(copies)))
+
+    openings = [opening] + copies
+
+    result_openings = []
+    symbolic_kept = 0
+    for op, group in zip(openings, groups):
+        keep_set = set(group)
+        for main_idx in group:
+            keep_set |= holes_of.get(main_idx, set())
+        print("  Reducing opening {} to a group of {} boundary(ies)...".format(
+            _eid_int(op.Id), len(group)))
+        kept = reduce_opening_to_region(op, keep_set, curve_loops)
+        symbolic_kept += kept
+        result_openings.append(op)
+        print("    -> kept {} symbolic line(s)".format(kept))
+
+    return result_openings, symbolic_kept, True
+
+
+def split_shaft(opening):
+    """Split one multi-boundary shaft opening. Returns
+    (result_openings, symbolic_kept, is_batch) or None if nothing to split.
+    is_batch is True when the boundary count exceeded
+    MAX_BOUNDARIES_PER_SPLIT and result_openings are intermediate,
+    still-multi-boundary groups that need a second Split pass rather than
+    fully-split single regions."""
+    sketch = get_sketch(opening)
+    curve_loops = get_curve_loops_from_sketch(sketch)
+    if len(curve_loops) <= 1:
+        print("  Shaft opening has only one boundary - skipping")
+        return None
+
+    main_indices, holes_of = analyze_loops(curve_loops)
+    print("\n  Loops: {} total, {} main boundary(ies), {} hole(s)".format(
+        len(curve_loops), len(main_indices), len(curve_loops) - len(main_indices)))
+
+    if len(main_indices) <= 1:
+        print("  Only one main boundary - nothing to split")
+        return None
+
+    if len(main_indices) > MAX_BOUNDARIES_PER_SPLIT:
+        return _split_into_groups(opening, main_indices, holes_of, curve_loops)
+    return _split_into_singles(opening, main_indices, holes_of, curve_loops)
 
 
 def main():
@@ -346,7 +409,11 @@ def main():
             "parameters.\n\n"
             "IMPORTANT: this edits the shaft sketch (SketchEditScope), which can "
             "crash Revit on some builds. SAVE your model first.\n\n"
-            "Click OK, then select the shaft opening(s) to split.",
+            "SAFETY LIMIT: only up to {} boundaries are fully split per run. A "
+            "shaft with more boundaries is first divided into intermediate "
+            "openings of {} boundaries each - re-run Split on those to finish.\n\n"
+            "Click OK, then select the shaft opening(s) to split.".format(
+                MAX_BOUNDARIES_PER_SPLIT, MAX_BOUNDARIES_PER_SPLIT),
             title="Split Shaft Opening Tool",
             ok=True, cancel=True)
         if not proceed:
@@ -379,6 +446,7 @@ def main():
         total_symbolic = 0
         successful = 0
         failed = 0
+        batch_ids = []
 
         for idx, opening in enumerate(selected_openings):
             print("\n" + "-" * 60)
@@ -388,12 +456,18 @@ def main():
             try:
                 result = split_shaft(opening)
                 if result:
-                    result_openings, symbolic_kept = result
+                    result_openings, symbolic_kept, is_batch = result
                     total_result += len(result_openings)
                     total_symbolic += symbolic_kept
                     successful += 1
-                    print("SUCCESS: {} region opening(s), {} symbolic line(s) kept".format(
-                        len(result_openings), symbolic_kept))
+                    if is_batch:
+                        batch_ids.extend(_eid_int(op.Id) for op in result_openings)
+                        print("GROUPED (pass 1 of 2): {} intermediate opening(s), "
+                              "{} symbolic line(s) kept. Re-run Split on these "
+                              "to finish.".format(len(result_openings), symbolic_kept))
+                    else:
+                        print("SUCCESS: {} region opening(s), {} symbolic line(s) kept".format(
+                            len(result_openings), symbolic_kept))
             except Exception as e:
                 failed += 1
                 import traceback
@@ -409,6 +483,9 @@ def main():
         print("Failed splits            : {}".format(failed))
         print("Resulting shaft openings : {}".format(total_result))
         print("Symbolic lines preserved : {}".format(total_symbolic))
+        if batch_ids:
+            print("Grouped, need 2nd pass   : {} opening(s) -> IDs {}".format(
+                len(batch_ids), ", ".join(str(i) for i in batch_ids)))
         print("=" * 60)
 
         msg = (
@@ -419,6 +496,13 @@ def main():
             "Resulting shaft openings: {}\n"
             "Symbolic lines preserved (native): {}"
         ).format(len(selected_openings), successful, failed, total_result, total_symbolic)
+        if batch_ids:
+            msg += (
+                "\n\nSafety limit reached (max {} boundaries/run): {} of the "
+                "resulting openings still have several boundaries grouped "
+                "together.\nSelect them and run Split Shaft again to finish "
+                "(pass 2)."
+            ).format(MAX_BOUNDARIES_PER_SPLIT, len(batch_ids))
         forms.alert(msg, title="Split Shaft Opening Summary")
 
     except Exception as e:
