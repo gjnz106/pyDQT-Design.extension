@@ -6,16 +6,19 @@ Splits a shaft opening that has several disconnected boundary loops into
 separate individual shaft openings.
 
 METHOD (per DQT's spec - mirrors the manual workflow):
-  1. Copy-paste the shaft in place once per boundary. Each copy is a faithful
+  1. Copy-paste the shaft in place ONE COPY AT A TIME. Each copy is a faithful
      duplicate: same sketch (ALL boundary loops + any holes + the user's
      Symbolic Lines) and the same instance parameters (Base/Top Constraint,
      offsets).
-  2. For each copy, open its boundary sketch with SketchEditScope and delete
-     the boundary loops (and the symbolic lines) that do NOT belong to the one
-     region that copy should keep. What remains is a single-region shaft that
-     still carries its real Symbolic Lines and all parameters.
-  3. The original opening is reused as the first region, so nothing has to be
-     recreated from scratch.
+  2. Immediately reduce that copy - open its boundary sketch with
+     SketchEditScope and delete the boundary loops (and the symbolic lines)
+     that do NOT belong to the region it should keep, then commit - BEFORE
+     making the next copy. At most two full-sketch shafts ever overlap, so
+     every regeneration stays small. (Making all N copies first and reducing
+     them afterwards stacks N full shafts cutting the same geometry during
+     every commit - a native-crash path on large shafts.)
+  3. The original opening is reduced LAST: it stays complete as the copy
+     source, and if anything fails mid-run the original is still untouched.
 
 This preserves the shaft's SYMBOLIC LINES natively (they stay inside each
 opening's sketch) instead of redrawing them as detached model lines, and it
@@ -26,6 +29,20 @@ some Revit builds this operation is unstable and can hard-crash Revit (an
 unrecoverable native crash that Python try/except cannot catch). SAVE the model
 before running. Everything is wrapped so that the ORIGINAL opening is never
 deleted - if a crash happens mid-run, closing without saving loses nothing.
+
+CRASH SAFEGUARDS:
+  - Copies are made and reduced one at a time (see METHOD) so the
+    regeneration load per commit stays minimal.
+  - The sketch is validated before AND after deleting curves: if a kept loop
+    would lose curves, or a removed loop leaves stray curves, the edit scope
+    is CANCELLED instead of committed - committing a broken shaft sketch is a
+    known native-crash path.
+  - Warnings are auto-deleted during every transaction / sketch commit so no
+    failure dialog interrupts an open edit scope.
+  - Openings that belong to a model group are skipped (editing a grouped
+    sketch is a known crash path - ungroup first).
+  - Elements are re-fetched by Id before each step; stale references are
+    never reused across regenerations.
 
 SAFETY LIMIT: each SketchEditScope.Commit() carries some crash risk, so a
 single run only fully splits up to MAX_BOUNDARIES_PER_SPLIT boundaries. If a
@@ -71,10 +88,34 @@ def _chunk(seq, size):
 
 
 class _NoOpFailurePreproc(IFailuresPreprocessor):
-    """Swallow sketch warnings so SketchEditScope.Commit isn't blocked by a
-    dialog. (It cannot stop a native crash - only managed failures.)"""
+    """Delete warnings so no failure dialog pops while a SketchEditScope is
+    open - a modal dialog during an open edit scope can wedge or crash the
+    commit. (It cannot stop a native crash - only managed failures.)"""
     def PreprocessFailures(self, failuresAccessor):
+        try:
+            failuresAccessor.DeleteAllWarnings()
+        except:
+            pass
         return FailureProcessingResult.Continue
+
+
+def _set_silent_failures(t):
+    """Attach the warning-swallowing preprocessor to a started transaction."""
+    try:
+        opts = t.GetFailureHandlingOptions()
+        opts.SetFailuresPreprocessor(_NoOpFailurePreproc())
+        t.SetFailureHandlingOptions(opts)
+    except:
+        pass
+
+
+def _in_group(elem):
+    """True if the element belongs to a model group (sketch editing of grouped
+    elements is a known crash path)."""
+    try:
+        return elem.GroupId != ElementId.InvalidElementId
+    except:
+        return False
 
 
 def is_shaft_opening(elem):
@@ -239,42 +280,73 @@ def classify_curve(curve, curve_loops):
     return ("other", -1)
 
 
-def copy_in_place(opening, count):
-    """Copy-paste the opening in the same place `count` times. Returns the list
-    of copied shaft openings. Runs in one transaction."""
+def copy_one_in_place(opening):
+    """Copy-paste the opening in the same place once, in its own transaction.
+    Returns the copied shaft opening."""
     copies = []
     t = Transaction(doc, "DQT - Copy shaft in place")
     t.Start()
     try:
-        for _ in range(count):
-            ids = List[ElementId]()
-            ids.Add(opening.Id)
-            new_ids = ElementTransformUtils.CopyElements(doc, ids, XYZ.Zero)
-            for nid in new_ids:
-                el = doc.GetElement(nid)
-                if is_shaft_opening(el):
-                    copies.append(el)
+        _set_silent_failures(t)
+        ids = List[ElementId]()
+        ids.Add(opening.Id)
+        new_ids = ElementTransformUtils.CopyElements(doc, ids, XYZ.Zero)
+        for nid in new_ids:
+            el = doc.GetElement(nid)
+            if is_shaft_opening(el):
+                copies.append(el)
         t.Commit()
     except Exception:
         if t.HasStarted() and not t.HasEnded():
             t.RollBack()
         raise
-    return copies
+    if len(copies) != 1:
+        raise Exception("copy-paste did not produce a shaft copy "
+                        "(got {})".format(len(copies)))
+    return copies[0]
+
+
+def _expected_loop_counts(curve_loops):
+    """Number of boundary curves each loop index should have."""
+    expected = {}
+    for j, loop in enumerate(curve_loops):
+        expected[j] = sum(1 for _ in loop)
+    return expected
+
+
+def _count_boundary_elements(opening, sketch, curve_loops):
+    """Count boundary curve ELEMENTS currently present in the sketch, per
+    loop index."""
+    counts = {}
+    for (e, c) in get_sketch_curve_elements(opening, sketch):
+        kind, j = classify_curve(c, curve_loops)
+        if kind == "boundary":
+            counts[j] = counts.get(j, 0) + 1
+    return counts
 
 
 def reduce_opening_to_region(opening, keep_set, curve_loops):
     """Edit the opening's sketch and delete every boundary loop / symbolic line
     that does NOT belong to a loop index in keep_set. Uses SketchEditScope.
-    Returns kept_symbolic_count. Raises on managed failure."""
+    Returns kept_symbolic_count. Raises on managed failure.
+
+    The sketch is validated before and after deleting: a broken sketch (a
+    kept loop missing curves, or a removed loop leaving strays) is never
+    committed - the edit scope is cancelled instead, because committing an
+    invalid shaft sketch can hard-crash Revit."""
     sketch = get_sketch(opening)
     if sketch is None:
         raise Exception("opening has no sketch")
 
+    expected = _expected_loop_counts(curve_loops)
+
     delete_ids = []
     kept_symbolic = 0
+    found_boundary = {}
     for (e, c) in get_sketch_curve_elements(opening, sketch):
         kind, j = classify_curve(c, curve_loops)
         if kind == "boundary":
+            found_boundary[j] = found_boundary.get(j, 0) + 1
             if j not in keep_set:
                 delete_ids.append(e.Id)
         elif kind == "symbolic":
@@ -284,14 +356,26 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
                 delete_ids.append(e.Id)
         # "other" -> keep, safe
 
+    # Pre-check: every loop must be fully re-identified in THIS sketch. A
+    # shortfall means classification drifted (tolerance) and deleting would
+    # leave a broken sketch - skip this opening instead of risking the commit.
+    for j in range(len(curve_loops)):
+        if found_boundary.get(j, 0) < expected.get(j, 0):
+            raise Exception(
+                "loop {}: only {} of {} boundary curves identified in the "
+                "sketch - classification mismatch, skipping this opening "
+                "instead of committing a broken sketch".format(
+                    j, found_boundary.get(j, 0), expected.get(j, 0)))
+
     if not delete_ids:
         return kept_symbolic
 
-    ses = SketchEditScope(doc, "DQT - Reduce shaft to one region")
+    ses = SketchEditScope(doc, "DQT - Reduce shaft opening")
     ses.Start(sketch.Id)
     t = Transaction(doc, "DQT - Delete extra loops")
     t.Start()
     try:
+        _set_silent_failures(t)
         for did in delete_ids:
             try:
                 doc.Delete(did)
@@ -307,32 +391,85 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
             pass
         raise
 
-    ses.Commit(_NoOpFailurePreproc())   # <-- SketchEditScope commit (crash risk)
+    # Post-check: kept loops must still be complete and removed loops fully
+    # gone. Otherwise cancel the scope - never commit a broken sketch.
+    counts_after = _count_boundary_elements(opening, sketch, curve_loops)
+    bad = None
+    for j in keep_set:
+        if counts_after.get(j, 0) < expected.get(j, 0):
+            bad = "kept loop {} lost boundary curves ({} of {} left)".format(
+                j, counts_after.get(j, 0), expected.get(j, 0))
+            break
+    if bad is None:
+        for j in range(len(curve_loops)):
+            if j not in keep_set and counts_after.get(j, 0) > 0:
+                bad = "removed loop {} still has {} boundary curve(s)".format(
+                    j, counts_after.get(j, 0))
+                break
+    if bad is not None:
+        try:
+            ses.Cancel()
+        except:
+            pass
+        raise Exception("sketch invalid after deleting ({}) - edit scope "
+                        "cancelled instead of committed".format(bad))
+
+    try:
+        ses.Commit(_NoOpFailurePreproc())   # <-- SketchEditScope commit (crash risk)
+    except Exception:
+        try:
+            ses.Cancel()
+        except:
+            pass
+        raise
     return kept_symbolic
+
+
+def _group_keep_set(group, holes_of):
+    """keep_set for a batch of main-loop indices: the loops plus their holes."""
+    keep_set = set(group)
+    for main_idx in group:
+        keep_set |= holes_of.get(main_idx, set())
+    return keep_set
+
+
+def _split_interleaved(opening, keep_sets, curve_loops):
+    """Shared engine: produce one opening per keep_set. Copies are made ONE AT
+    A TIME and each copy is reduced immediately, so at most two full-sketch
+    shafts overlap during any commit. The ORIGINAL is reduced last (to
+    keep_sets[0]) - it stays complete as the copy source, and a mid-run
+    failure leaves it untouched."""
+    original_id = opening.Id
+    result_openings = []
+    symbolic_kept = 0
+
+    for keep_set in keep_sets[1:]:
+        src = doc.GetElement(original_id)
+        cp = copy_one_in_place(src)
+        print("  Copy {} -> reducing to {} loop(s)...".format(
+            _eid_int(cp.Id), len(keep_set)))
+        kept = reduce_opening_to_region(cp, keep_set, curve_loops)
+        symbolic_kept += kept
+        result_openings.append(cp)
+        print("    -> kept {} symbolic line(s)".format(kept))
+
+    src = doc.GetElement(original_id)
+    print("  Reducing ORIGINAL {} to {} loop(s)...".format(
+        _eid_int(original_id), len(keep_sets[0])))
+    kept = reduce_opening_to_region(src, keep_sets[0], curve_loops)
+    symbolic_kept += kept
+    result_openings.insert(0, src)
+    print("    -> kept {} symbolic line(s)".format(kept))
+
+    return result_openings, symbolic_kept
 
 
 def _split_into_singles(opening, main_indices, holes_of, curve_loops):
     """One opening per main boundary - fully split, each keeps its real
-    Symbolic Lines. Reuses the original opening for the first region."""
-    print("  Copy-pasting {} in-place copy(ies)...".format(len(main_indices) - 1))
-    copies = copy_in_place(opening, len(main_indices) - 1)
-    if len(copies) != len(main_indices) - 1:
-        raise Exception("expected {} copies, got {}".format(
-            len(main_indices) - 1, len(copies)))
-
-    openings = [opening] + copies
-
-    result_openings = []
-    symbolic_kept = 0
-    for op, main_idx in zip(openings, main_indices):
-        keep_set = set([main_idx]) | holes_of.get(main_idx, set())
-        print("  Reducing opening {} to region (loop {}, {} hole(s))...".format(
-            _eid_int(op.Id), main_idx, len(holes_of.get(main_idx, set()))))
-        kept = reduce_opening_to_region(op, keep_set, curve_loops)
-        symbolic_kept += kept
-        result_openings.append(op)
-        print("    -> kept {} symbolic line(s)".format(kept))
-
+    Symbolic Lines."""
+    keep_sets = [_group_keep_set([i], holes_of) for i in main_indices]
+    result_openings, symbolic_kept = _split_interleaved(
+        opening, keep_sets, curve_loops)
     return result_openings, symbolic_kept, False
 
 
@@ -348,28 +485,9 @@ def _split_into_groups(opening, main_indices, holes_of, curve_loops):
           "to finish)...".format(
               len(main_indices), MAX_BOUNDARIES_PER_SPLIT, len(groups),
               MAX_BOUNDARIES_PER_SPLIT))
-
-    print("  Copy-pasting {} in-place copy(ies)...".format(len(groups) - 1))
-    copies = copy_in_place(opening, len(groups) - 1)
-    if len(copies) != len(groups) - 1:
-        raise Exception("expected {} copies, got {}".format(
-            len(groups) - 1, len(copies)))
-
-    openings = [opening] + copies
-
-    result_openings = []
-    symbolic_kept = 0
-    for op, group in zip(openings, groups):
-        keep_set = set(group)
-        for main_idx in group:
-            keep_set |= holes_of.get(main_idx, set())
-        print("  Reducing opening {} to a group of {} boundary(ies)...".format(
-            _eid_int(op.Id), len(group)))
-        kept = reduce_opening_to_region(op, keep_set, curve_loops)
-        symbolic_kept += kept
-        result_openings.append(op)
-        print("    -> kept {} symbolic line(s)".format(kept))
-
+    keep_sets = [_group_keep_set(g, holes_of) for g in groups]
+    result_openings, symbolic_kept = _split_interleaved(
+        opening, keep_sets, curve_loops)
     return result_openings, symbolic_kept, True
 
 
@@ -380,6 +498,11 @@ def split_shaft(opening):
     MAX_BOUNDARIES_PER_SPLIT and result_openings are intermediate,
     still-multi-boundary groups that need a second Split pass rather than
     fully-split single regions."""
+    if _in_group(opening):
+        print("  SKIPPED: this opening belongs to a model group - editing a "
+              "grouped sketch can crash Revit. Ungroup it first.")
+        return None
+
     sketch = get_sketch(opening)
     curve_loops = get_curve_loops_from_sketch(sketch)
     if len(curve_loops) <= 1:
@@ -412,6 +535,7 @@ def main():
             "SAFETY LIMIT: only up to {} boundaries are fully split per run. A "
             "shaft with more boundaries is first divided into intermediate "
             "openings of {} boundaries each - re-run Split on those to finish.\n\n"
+            "Openings inside a model group are skipped - ungroup them first.\n\n"
             "Click OK, then select the shaft opening(s) to split.".format(
                 MAX_BOUNDARIES_PER_SPLIT, MAX_BOUNDARIES_PER_SPLIT),
             title="Split Shaft Opening Tool",
