@@ -61,6 +61,10 @@ CRASH SAFEGUARDS:
   - ALL OR NOTHING. If a split cannot finish, every copy made for it is
     deleted again and the original is left exactly as it was. A failed run
     must not leave duplicate shafts stacked on the original.
+  - SHARED EDGES ARE KEPT. Loops in one shaft can touch, so a curve can
+    belong to a removed loop AND a retained one at the same time. Such a
+    curve is never deleted - the retained profile still needs it, and Revit
+    refuses the delete anyway ("EditModeMgr element modifiable checker").
   - The UI selection is cleared before any editing, and every element is
     re-fetched by Id right before use; stale references are never reused
     across regenerations.
@@ -434,19 +438,34 @@ def analyze_loops(polys):
     return main_indices, holes_of
 
 
-def classify_point(xy, polys):
-    """('boundary', loop_index) if the point lies on a loop outline,
-    ('symbolic', loop_index) if it is inside a loop,
-    ('other', -1) otherwise. Pure arithmetic on the captured snapshot."""
+def loops_at(xy, polys):
+    """(on, inside): EVERY loop whose outline the point lies on, and every
+    loop that strictly contains it.
+
+    Both lists matter because loops in one shaft can touch or share an edge.
+    A curve on a shared edge belongs to two loops at once - attributing it to
+    just the first match (as this used to) makes the tool try to delete a
+    curve the remaining profile still needs, and Revit refuses with
+    "EditModeMgr element modifiable checker"."""
     if xy is None:
-        return ("other", -1)
+        return [], []
+    on = []
+    inside = []
     for j, poly in enumerate(polys):
         if point_on_poly(xy, poly):
-            return ("boundary", j)
-    for j, poly in enumerate(polys):
-        if point_in_poly(xy, poly):
-            return ("symbolic", j)
-    return ("other", -1)
+            on.append(j)
+        elif point_in_poly(xy, poly):
+            inside.append(j)
+    return on, inside
+
+
+def _is_removable(on, inside, keep_set):
+    """A curve may be deleted only when nothing we are keeping needs it."""
+    if on:
+        return not any(j in keep_set for j in on)
+    if inside:
+        return not any(j in keep_set for j in inside)
+    return False   # belongs to no loop - leave it alone
 
 
 def copy_one_in_place(opening):
@@ -522,22 +541,22 @@ def _describe_element(eid):
 
 
 def _stragglers(opening, sketch, keep_set, polys):
-    """Curve elements still present that belong to a loop being removed."""
+    """Curve elements still present that nothing we are keeping needs."""
     left = []
     for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        kind, j = classify_point(xy, polys)
-        if kind in ("boundary", "symbolic") and j not in keep_set:
+        on, inside = loops_at(xy, polys)
+        if _is_removable(on, inside, keep_set):
             left.append(e.Id)
     return left
 
 
 def _count_boundary_elements(opening, sketch, polys):
     """Count boundary curve ELEMENTS currently present in the sketch, per
-    loop index."""
+    loop index. A curve on a shared edge counts for every loop it lies on."""
     counts = {}
     for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        kind, j = classify_point(xy, polys)
-        if kind == "boundary":
+        on, _inside = loops_at(xy, polys)
+        for j in on:
             counts[j] = counts.get(j, 0) + 1
     return counts
 
@@ -570,18 +589,21 @@ def reduce_opening_to_region(opening, keep_set, polys):
     delete_ids = []
     kept_symbolic = 0
     found_boundary = {}
+    shared = 0
     for (e, xy) in curve_elements:
-        kind, j = classify_point(xy, polys)
-        if kind == "boundary":
+        on, inside = loops_at(xy, polys)
+        for j in on:
             found_boundary[j] = found_boundary.get(j, 0) + 1
-            if j not in keep_set:
-                delete_ids.append(e.Id)
-        elif kind == "symbolic":
-            if j in keep_set:
+        if _is_removable(on, inside, keep_set):
+            delete_ids.append(e.Id)
+        else:
+            if on and len(on) > 1:
+                shared += 1
+            elif inside and any(j in keep_set for j in inside):
                 kept_symbolic += 1
-            else:
-                delete_ids.append(e.Id)
-        # "other" -> keep, safe
+    if shared:
+        _log("reduce {}: {} curve(s) lie on a shared edge and are kept "
+             "because a retained loop still needs them".format(oid, shared))
 
     # Pre-check: every loop must be fully re-identified in THIS sketch. A
     # shortfall means classification drifted (tolerance) and deleting would
@@ -657,11 +679,12 @@ def reduce_opening_to_region(opening, keep_set, polys):
                 j, counts_after.get(j, 0), expected.get(j, 0))
             break
     if bad is None:
-        for j in range(len(polys)):
-            if j not in keep_set and counts_after.get(j, 0) > 0:
-                bad = "removed loop {} still has {} boundary curve(s)".format(
-                    j, counts_after.get(j, 0))
-                break
+        # Only curves nothing retained needs count as leftovers; a curve on an
+        # edge shared with a kept loop is supposed to stay.
+        leftovers = _stragglers(opening, sketch, keep_set, polys)
+        if leftovers:
+            bad = "{} curve(s) belonging only to removed loops are still " \
+                  "present".format(len(leftovers))
     if bad is not None:
         try:
             ses.Cancel()
