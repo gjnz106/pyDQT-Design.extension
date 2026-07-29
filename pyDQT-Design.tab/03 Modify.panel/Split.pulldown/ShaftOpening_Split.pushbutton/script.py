@@ -56,7 +56,11 @@ CRASH SAFEGUARDS:
     has to click through one dialog per copy.
   - Deleting sketch curves can cascade, so the delete step re-scans and
     retries (_DELETE_PASSES) instead of failing an opening over a single
-    curve that survived the first pass.
+    curve that survived the first pass. If a pass removes nothing, the
+    curves are undeletable rather than stale and the opening is abandoned.
+  - ALL OR NOTHING. If a split cannot finish, every copy made for it is
+    deleted again and the original is left exactly as it was. A failed run
+    must not leave duplicate shafts stacked on the original.
   - The UI selection is cleared before any editing, and every element is
     re-fetched by Id right before use; stale references are never reused
     across regenerations.
@@ -483,6 +487,40 @@ def _expected_loop_counts(polys):
     return expected
 
 
+def _describe_element(eid):
+    """Identify an element for the log - used on curves Revit refuses to
+    delete, so the next log says what they actually are."""
+    try:
+        e = doc.GetElement(eid)
+    except Exception as ex:
+        return "GetElement failed: {}".format(ex)
+    if e is None:
+        return "already gone"
+    bits = []
+    try:
+        bits.append(e.GetType().Name)
+    except:
+        pass
+    try:
+        if e.Category is not None:
+            bits.append("cat=" + e.Category.Name)
+    except:
+        pass
+    try:
+        bits.append("style=" + e.LineStyle.Name)
+    except:
+        pass
+    try:
+        bits.append("ownerView=" + str(_eid_int(e.OwnerViewId)))
+    except:
+        pass
+    try:
+        bits.append("pinned=" + str(e.Pinned))
+    except:
+        pass
+    return " / ".join(bits) if bits else "?"
+
+
 def _stragglers(opening, sketch, keep_set, polys):
     """Curve elements still present that belong to a loop being removed."""
     left = []
@@ -571,6 +609,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
     # beforehand can leave stragglers behind (and a stale id then fails to
     # delete). Re-scan after each pass and delete whatever still belongs to a
     # removed loop, rather than failing the whole opening over one leftover.
+    previous_left = None
     for attempt in range(1, _DELETE_PASSES + 1):
         t = Transaction(doc, "DQT - Delete extra loops")
         t.Start()
@@ -580,7 +619,8 @@ def reduce_opening_to_region(opening, keep_set, polys):
                 try:
                     doc.Delete(did)
                 except Exception as ex:
-                    _log("    delete failed for {}: {}".format(_eid_int(did), ex))
+                    _log("    delete failed for {} [{}]: {}".format(
+                        _eid_int(did), _describe_element(did), ex))
             _log("reduce {}: pass {} deletes done, committing...".format(
                 oid, attempt))
             t.Commit()
@@ -597,6 +637,13 @@ def reduce_opening_to_region(opening, keep_set, polys):
         delete_ids = _stragglers(opening, sketch, keep_set, polys)
         if not delete_ids:
             break
+        # Retrying only helps when the pass actually removed something; if the
+        # same curves survive again they are undeletable, not stale.
+        if previous_left is not None and len(delete_ids) >= previous_left:
+            _log("reduce {}: {} curve(s) cannot be deleted in this edit scope "
+                 "- giving up on this opening".format(oid, len(delete_ids)))
+            break
+        previous_left = len(delete_ids)
         _log("reduce {}: pass {} left {} straggler(s), retrying...".format(
             oid, attempt, len(delete_ids)))
 
@@ -644,33 +691,71 @@ def _group_keep_set(group, holes_of):
     return keep_set
 
 
+def _delete_copies(ids):
+    """Remove copies left behind by a split that could not finish.
+
+    Without this a failed split leaves every copy it had already made sitting
+    on top of the original - full duplicates in the same place, which is both
+    wrong and the source of a pile of "identical instances" warnings that
+    accumulate with each retry."""
+    if not ids:
+        return
+    _log("cleanup: removing {} copy(ies) left by the failed split".format(
+        len(ids)))
+    t = Transaction(doc, "DQT - Remove failed split copies")
+    t.Start()
+    _set_silent_failures(t)
+    try:
+        for eid in ids:
+            try:
+                doc.Delete(eid)
+            except Exception as ex:
+                _log("    cleanup delete failed for {}: {}".format(
+                    _eid_int(eid), ex))
+        t.Commit()
+        _log("cleanup: done")
+    except Exception as ex:
+        if t.HasStarted() and not t.HasEnded():
+            t.RollBack()
+        _log("cleanup: FAILED {}".format(ex))
+
+
 def _split_interleaved(opening, keep_sets, polys):
     """Shared engine: produce one opening per keep_set. Copies are made ONE AT
     A TIME and each copy is reduced immediately, so at most two full-sketch
     shafts overlap during any commit. The ORIGINAL is reduced last (to
-    keep_sets[0]) - it stays complete as the copy source, and a mid-run
-    failure leaves it untouched."""
+    keep_sets[0]) - it stays complete as the copy source.
+
+    All or nothing: if any step fails, every copy made so far is deleted and
+    the original is left exactly as it was, so a failed run leaves no
+    duplicates behind and can simply be retried."""
     original_id = opening.Id
     result_openings = []
+    created_ids = []
     symbolic_kept = 0
 
-    for keep_set in keep_sets[1:]:
-        src = doc.GetElement(original_id)
-        cp = copy_one_in_place(src)
-        print("  Copy {} -> reducing to {} loop(s)...".format(
-            _eid_int(cp.Id), len(keep_set)))
-        kept = reduce_opening_to_region(cp, keep_set, polys)
-        symbolic_kept += kept
-        result_openings.append(cp)
-        print("    -> kept {} symbolic line(s)".format(kept))
+    try:
+        for keep_set in keep_sets[1:]:
+            src = doc.GetElement(original_id)
+            cp = copy_one_in_place(src)
+            created_ids.append(cp.Id)
+            print("  Copy {} -> reducing to {} loop(s)...".format(
+                _eid_int(cp.Id), len(keep_set)))
+            kept = reduce_opening_to_region(cp, keep_set, polys)
+            symbolic_kept += kept
+            result_openings.append(cp)
+            print("    -> kept {} symbolic line(s)".format(kept))
 
-    src = doc.GetElement(original_id)
-    print("  Reducing ORIGINAL {} to {} loop(s)...".format(
-        _eid_int(original_id), len(keep_sets[0])))
-    kept = reduce_opening_to_region(src, keep_sets[0], polys)
-    symbolic_kept += kept
-    result_openings.insert(0, src)
-    print("    -> kept {} symbolic line(s)".format(kept))
+        src = doc.GetElement(original_id)
+        print("  Reducing ORIGINAL {} to {} loop(s)...".format(
+            _eid_int(original_id), len(keep_sets[0])))
+        kept = reduce_opening_to_region(src, keep_sets[0], polys)
+        symbolic_kept += kept
+        result_openings.insert(0, src)
+        print("    -> kept {} symbolic line(s)".format(kept))
+    except Exception:
+        _delete_copies(created_ids)
+        raise
 
     return result_openings, symbolic_kept
 
