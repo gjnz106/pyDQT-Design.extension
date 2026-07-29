@@ -129,6 +129,29 @@ class _NoOpFailurePreproc(IFailuresPreprocessor):
         return FailureProcessingResult.Continue
 
 
+def _regen_checkpoint(tag):
+    """Force any deferred host re-cutting to happen HERE, inside a logged
+    transaction, rather than later outside the tool's control.
+
+    A shaft opening re-cuts its hosts lazily; after the sketch commits, that
+    work can still be pending and is then done by whatever touches the model
+    next (a view redraw, a save, the next click). If that is where things
+    break, doing it here makes it observable in the log instead of appearing
+    as a crash long after the tool reported success."""
+    _log("regen {}: start".format(tag))
+    t = Transaction(doc, "DQT - Regenerate after split")
+    t.Start()
+    try:
+        doc.Regenerate()
+        t.Commit()
+        _log("regen {}: OK".format(tag))
+    except Exception as ex:
+        if t.HasStarted() and not t.HasEnded():
+            t.RollBack()
+        _log("regen {}: FAILED {}".format(tag, ex))
+        raise
+
+
 def _in_group(elem):
     """True if the element belongs to a model group (sketch editing of grouped
     elements is a known crash path)."""
@@ -699,6 +722,8 @@ def main():
                         print("SUCCESS: {} region opening(s), {} symbolic line(s) kept".format(
                             len(result_openings), symbolic_kept))
                 _log("opening {}: DONE".format(_eid_int(oid)))
+                # Settle the host geometry now, while we can still log it.
+                _regen_checkpoint("after opening {}".format(_eid_int(oid)))
             except Exception as e:
                 failed += 1
                 import traceback
@@ -750,7 +775,10 @@ def main():
                     "reopen it) before the next pass. Sketch edits from this "
                     "run stay in memory and running another pass on top of "
                     "them in the same session is what has been crashing.")
+        msg += ("\n\nSAVE NOW, before clicking anything else in the model.")
+        _log("showing summary dialog...")
         forms.alert(msg, title="Split Shaft Opening Summary")
+        _log("summary dialog closed - script finished cleanly")
 
     except Exception as e:
         import traceback
