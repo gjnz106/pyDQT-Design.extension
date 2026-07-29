@@ -50,9 +50,13 @@ CRASH SAFEGUARDS:
     would lose curves, or a removed loop leaves stray curves, the edit scope
     is CANCELLED instead of committed - committing a broken shaft sketch is a
     known native-crash path.
-  - Failure handling is kept EXACTLY as in the run that succeeded on this
-    machine: no failures preprocessor on plain transactions, and a plain
-    Continue preprocessor only on the sketch commit.
+  - Warnings are deleted rather than shown. Copying a shaft in place raises
+    "identical instances in the same place" on every copy - the copy is only
+    identical for the moment before it is trimmed - so without this the user
+    has to click through one dialog per copy.
+  - Deleting sketch curves can cascade, so the delete step re-scans and
+    retries (_DELETE_PASSES) instead of failing an opening over a single
+    curve that survived the first pass.
   - The UI selection is cleared before any editing, and every element is
     re-fetched by Id right before use; stale references are never reused
     across regenerations.
@@ -108,6 +112,8 @@ _ON_LOOP_TOL = 1e-4   # feet - midpoint-on-boundary tolerance
 
 MAX_BOUNDARIES_PER_SPLIT = 20   # hard cap on boundaries fully split in one run
 
+_DELETE_PASSES = 3   # re-scan/retry passes for curves that survive a delete
+
 
 def _chunk(seq, size):
     """Yield successive `size`-length slices of seq."""
@@ -153,13 +159,31 @@ def _log(msg):
 
 
 class _NoOpFailurePreproc(IFailuresPreprocessor):
-    """Swallow sketch warnings so SketchEditScope.Commit isn't blocked by a
-    dialog. Kept EXACTLY as in the run that succeeded on this machine (no
-    DeleteAllWarnings, no per-transaction attachment) - every extra failure-
-    handling callback is one more native round-trip that can differ from the
-    proven-good configuration."""
+    """Delete warnings instead of letting Revit put them on screen.
+
+    Copying a shaft in place legitimately produces "There are identical
+    instances in the same place" on every single copy - the copy is identical
+    only for the moment before it is trimmed down. Returning Continue without
+    deleting them means Revit shows that dialog once per copy and the user has
+    to click through all of them. Deleting the warnings here suppresses the
+    dialog; it cannot suppress errors, and it cannot stop a native crash."""
     def PreprocessFailures(self, failuresAccessor):
+        try:
+            failuresAccessor.DeleteAllWarnings()
+        except:
+            pass
         return FailureProcessingResult.Continue
+
+
+def _set_silent_failures(t):
+    """Attach the warning-deleting preprocessor to a started transaction."""
+    try:
+        opts = t.GetFailureHandlingOptions()
+        opts.SetFailuresPreprocessor(_NoOpFailurePreproc())
+        opts.SetClearAfterRollback(True)
+        t.SetFailureHandlingOptions(opts)
+    except:
+        pass
 
 
 def _regen_checkpoint(tag):
@@ -428,6 +452,7 @@ def copy_one_in_place(opening):
     _log("copy: start (src {})".format(_eid_int(opening.Id)))
     t = Transaction(doc, "DQT - Copy shaft in place")
     t.Start()
+    _set_silent_failures(t)   # the copy IS an identical instance - no dialog
     try:
         ids = List[ElementId]()
         ids.Add(opening.Id)
@@ -456,6 +481,16 @@ def _expected_loop_counts(polys):
     for j, poly in enumerate(polys):
         expected[j] = poly["curve_count"]
     return expected
+
+
+def _stragglers(opening, sketch, keep_set, polys):
+    """Curve elements still present that belong to a loop being removed."""
+    left = []
+    for (e, xy) in get_sketch_curve_elements(opening, sketch):
+        kind, j = classify_point(xy, polys)
+        if kind in ("boundary", "symbolic") and j not in keep_set:
+            left.append(e.Id)
+    return left
 
 
 def _count_boundary_elements(opening, sketch, polys):
@@ -530,25 +565,40 @@ def reduce_opening_to_region(opening, keep_set, polys):
     ses = SketchEditScope(doc, "DQT - Reduce shaft opening")
     ses.Start(sketch.Id)
     _log("reduce {}: scope started, delete transaction...".format(oid))
-    t = Transaction(doc, "DQT - Delete extra loops")
-    t.Start()
-    try:
-        for did in delete_ids:
-            try:
-                doc.Delete(did)
-            except Exception as ex:
-                print("    (could not delete curve {}: {})".format(_eid_int(did), ex))
-        _log("reduce {}: deletes done, committing transaction...".format(oid))
-        t.Commit()
-        _log("reduce {}: delete transaction OK".format(oid))
-    except Exception:
-        if t.HasStarted() and not t.HasEnded():
-            t.RollBack()
+
+    # Deleting sketch curves can cascade: removing one curve may make Revit
+    # drop or regenerate others, so a single pass over an id list captured
+    # beforehand can leave stragglers behind (and a stale id then fails to
+    # delete). Re-scan after each pass and delete whatever still belongs to a
+    # removed loop, rather than failing the whole opening over one leftover.
+    for attempt in range(1, _DELETE_PASSES + 1):
+        t = Transaction(doc, "DQT - Delete extra loops")
+        t.Start()
+        _set_silent_failures(t)
         try:
-            ses.Cancel()
-        except:
-            pass
-        raise
+            for did in delete_ids:
+                try:
+                    doc.Delete(did)
+                except Exception as ex:
+                    _log("    delete failed for {}: {}".format(_eid_int(did), ex))
+            _log("reduce {}: pass {} deletes done, committing...".format(
+                oid, attempt))
+            t.Commit()
+            _log("reduce {}: pass {} delete transaction OK".format(oid, attempt))
+        except Exception:
+            if t.HasStarted() and not t.HasEnded():
+                t.RollBack()
+            try:
+                ses.Cancel()
+            except:
+                pass
+            raise
+
+        delete_ids = _stragglers(opening, sketch, keep_set, polys)
+        if not delete_ids:
+            break
+        _log("reduce {}: pass {} left {} straggler(s), retrying...".format(
+            oid, attempt, len(delete_ids)))
 
     # Post-check: kept loops must still be complete and removed loops fully
     # gone. Otherwise cancel the scope - never commit a broken sketch.
