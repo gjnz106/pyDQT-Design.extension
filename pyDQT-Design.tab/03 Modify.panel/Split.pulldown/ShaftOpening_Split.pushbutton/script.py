@@ -110,7 +110,26 @@ def _chunk(seq, size):
         yield seq[i:i + size]
 
 
-_LOG_PATH = os.path.join(tempfile.gettempdir(), "DQT_ShaftSplit.log")
+def _default_log_path():
+    """A log location that stays the SAME across Revit restarts.
+
+    tempfile.gettempdir() under Revit points at a per-session sandbox
+    (...\\Temp\\<guid>\\) whose guid changes every time Revit starts. After a
+    crash-and-restart the new session therefore logs to a different file and
+    the crashed session's log is effectively unfindable - so anchor the log to
+    the user profile instead."""
+    for env in ("USERPROFILE", "HOME"):
+        base = os.environ.get(env)
+        if base:
+            try:
+                if os.path.isdir(base):
+                    return os.path.join(base, "DQT_ShaftSplit.log")
+            except:
+                pass
+    return os.path.join(tempfile.gettempdir(), "DQT_ShaftSplit.log")
+
+
+_LOG_PATH = _default_log_path()
 
 
 def _log(msg):
@@ -121,7 +140,7 @@ def _log(msg):
         f = open(_LOG_PATH, "a")
         try:
             f.write("{} | {}\n".format(
-                datetime.datetime.now().strftime("%H:%M:%S"), msg))
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
         finally:
             f.close()
     except:
@@ -448,16 +467,23 @@ def reduce_opening_to_region(opening, keep_set, polys):
     invalid shaft sketch can hard-crash Revit."""
     oid = _eid_int(opening.Id)
     _log("reduce {}: begin (keep {} loop(s))".format(oid, len(keep_set)))
+    _log("reduce {}: resolving sketch...".format(oid))
     sketch = get_sketch(opening)
     if sketch is None:
         raise Exception("opening has no sketch")
+    _log("reduce {}: sketch {} resolved, scanning curve elements...".format(
+        oid, _eid_int(sketch.Id)))
 
     expected = _expected_loop_counts(polys)
+
+    curve_elements = get_sketch_curve_elements(opening, sketch)
+    _log("reduce {}: scanned {} curve element(s), classifying...".format(
+        oid, len(curve_elements)))
 
     delete_ids = []
     kept_symbolic = 0
     found_boundary = {}
-    for (e, xy) in get_sketch_curve_elements(opening, sketch):
+    for (e, xy) in curve_elements:
         kind, j = classify_point(xy, polys)
         if kind == "boundary":
             found_boundary[j] = found_boundary.get(j, 0) + 1
@@ -741,10 +767,12 @@ def main():
             len(selected_ids)))
         print("Black-box log: {}".format(_LOG_PATH))
         print("(if Revit crashes, the LAST line of that file names the exact")
-        print(" operation that died - please send it to DQT)")
+        print(" operation that died - please send it to DQT. The path above is")
+        print(" the same file every session, so it survives a restart.)")
         print("=" * 60)
         _log("=" * 50)
-        _log("RUN start - {} opening(s) selected".format(len(selected_ids)))
+        _log("RUN start - {} opening(s) selected - doc: {}".format(
+            len(selected_ids), getattr(doc, "Title", "?")))
 
         total_result = 0
         total_symbolic = 0
@@ -846,7 +874,8 @@ def main():
                     "reopen it) before the next pass. Sketch edits from this "
                     "run stay in memory and running another pass on top of "
                     "them in the same session is what has been crashing.")
-        msg += ("\n\nSAVE NOW, before clicking anything else in the model.")
+        msg += ("\n\nSAVE NOW, before clicking anything else in the model."
+                "\n\nLog: {}".format(_LOG_PATH))
         _log("showing summary dialog...")
         forms.alert(msg, title="Split Shaft Opening Summary")
         _log("summary dialog closed - script finished cleanly")
