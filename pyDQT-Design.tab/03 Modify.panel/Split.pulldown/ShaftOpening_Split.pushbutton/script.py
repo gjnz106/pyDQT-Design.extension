@@ -31,6 +31,14 @@ before running. Everything is wrapped so that the ORIGINAL opening is never
 deleted - if a crash happens mid-run, closing without saving loses nothing.
 
 CRASH SAFEGUARDS:
+  - NO DOCUMENT GEOMETRY IS HELD ACROSS A TRANSACTION. The boundary loops are
+    converted to plain float polygons once, up front, and every containment
+    test afterwards is pure arithmetic. Curve objects from Sketch.Profile are
+    wrappers over document-owned native memory; after a copy/commit
+    regenerates the document they can point at freed memory, and touching one
+    hard-crashes Revit with no catchable exception. This was the actual cause
+    of the reported crash, which struck while classifying curves - outside any
+    transaction or edit scope.
   - Copies are made and reduced one at a time (see METHOD) so the
     regeneration load per commit stays minimal.
   - The sketch is validated before AND after deleting curves: if a kept loop
@@ -75,6 +83,7 @@ from System.Collections.Generic import List
 import clr
 clr.AddReference('System.Core')
 import datetime
+import math
 import os
 import tempfile
 
@@ -201,8 +210,12 @@ def get_curve_loops_from_sketch(sketch):
 
 
 def get_sketch_curve_elements(opening, sketch):
-    """Every CurveElement that belongs to the opening's sketch (both boundary
-    lines and symbolic lines), as a list of (element, geometry_curve)."""
+    """Every CurveElement of the opening's sketch (boundary lines and symbolic
+    lines), as a list of (element, (x, y)) where the tuple is the curve's
+    MIDPOINT captured immediately as plain floats.
+
+    The Curve wrapper itself is deliberately NOT returned - see
+    loops_to_polygons() for why document geometry must never be held."""
     found = {}
     hosts = [opening]
     if sketch is not None:
@@ -222,78 +235,132 @@ def get_sketch_curve_elements(opening, sketch):
                 continue
             if c is None:
                 continue
-            found[_eid_int(e.Id)] = (e, c)
+            mid = _curve_midpoint(c)
+            if mid is None:
+                continue
+            found[_eid_int(e.Id)] = (e, mid)
     return list(found.values())
 
 
 def _curve_midpoint(curve):
+    """Midpoint of a curve as a plain (x, y) tuple, read immediately."""
     try:
-        return curve.Evaluate(0.5, True)
+        p = curve.Evaluate(0.5, True)
     except:
         try:
-            return curve.GetEndPoint(0)
+            p = curve.GetEndPoint(0)
         except:
             return None
+    try:
+        return (p.X, p.Y)
+    except:
+        return None
 
 
-def point_on_loop(point, loop, tol=_ON_LOOP_TOL):
-    """True if point lies on (within tol of) any curve of the loop."""
-    for curve in loop:
-        try:
-            if curve.Distance(point) < tol:
-                return True
-        except:
-            pass
+def loops_to_polygons(curve_loops):
+    """Snapshot loop geometry as plain float polygons, ONCE, up front.
+
+    Curve objects handed out by Sketch.Profile are managed wrappers over
+    geometry owned by the document. Every copy/commit this tool performs
+    modifies and regenerates the document, after which those wrappers can
+    point at freed native memory - touching one then hard-crashes Revit with
+    no managed exception to catch. Converting to numbers here means every
+    later containment test is pure Python and can never touch stale geometry.
+
+    Returns a list of dicts: {"pts": [(x, y), ...] closed ring,
+    "curve_count": how many curves the loop had}."""
+    polys = []
+    for loop in curve_loops:
+        pts = []
+        curve_count = 0
+        for c in loop:
+            curve_count += 1
+            try:
+                tess = c.Tessellate()
+            except:
+                try:
+                    tess = [c.GetEndPoint(0), c.GetEndPoint(1)]
+                except:
+                    tess = []
+            for p in tess:
+                try:
+                    xy = (p.X, p.Y)
+                except:
+                    continue
+                if not pts or pts[-1] != xy:
+                    pts.append(xy)
+        if pts and pts[0] != pts[-1]:
+            pts.append(pts[0])       # close the ring
+        polys.append({"pts": pts, "curve_count": curve_count})
+    return polys
+
+
+def _dist_point_segment(px, py, ax, ay, bx, by):
+    """Shortest distance from (px, py) to segment (ax, ay)-(bx, by)."""
+    dx = bx - ax
+    dy = by - ay
+    if dx == 0.0 and dy == 0.0:
+        return math.hypot(px - ax, py - ay)
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+    if t < 0.0:
+        t = 0.0
+    elif t > 1.0:
+        t = 1.0
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def point_on_poly(xy, poly, tol=_ON_LOOP_TOL):
+    """True if the point lies on (within tol of) the polygon outline."""
+    px, py = xy
+    pts = poly["pts"]
+    for i in range(len(pts) - 1):
+        ax, ay = pts[i]
+        bx, by = pts[i + 1]
+        if _dist_point_segment(px, py, ax, ay, bx, by) < tol:
+            return True
     return False
 
 
-def point_in_loop(point, loop):
-    """Even-odd ray cast: is point strictly inside the loop."""
-    ray_end = XYZ(point.X + 10000, point.Y, point.Z)
-    ray = Line.CreateBound(point, ray_end)
-    count = 0
-    for curve in loop:
-        try:
-            if curve.Intersect(ray) == DB.SetComparisonResult.Overlap:
-                count += 1
-        except:
-            pass
-    return count % 2 == 1
+def point_in_poly(xy, poly):
+    """Even-odd ray cast in pure arithmetic - no Revit geometry involved, so
+    no long construction lines and nothing that can dereference the model."""
+    px, py = xy
+    pts = poly["pts"]
+    inside = False
+    for i in range(len(pts) - 1):
+        x1, y1 = pts[i]
+        x2, y2 = pts[i + 1]
+        if (y1 > py) != (y2 > py):
+            x_cross = x1 + (py - y1) * (x2 - x1) / (y2 - y1)
+            if px < x_cross:
+                inside = not inside
+    return inside
 
 
-def check_if_loop_is_inside(inner_loop, outer_loop):
-    test_point = None
-    for curve in inner_loop:
-        test_point = curve.GetEndPoint(0)
-        break
-    if not test_point:
-        return False
-    return point_in_loop(test_point, outer_loop)
-
-
-def analyze_loops(curve_loops):
+def analyze_loops(polys):
     """Classify loops (by original index) into main boundaries and holes.
     Returns (main_indices, holes_of) where holes_of[main] = set(hole indices)."""
-    n = len(curve_loops)
+    n = len(polys)
     areas = []
-    for loop in curve_loops:
-        pts = []
-        for c in loop:
-            pts.append(c.GetEndPoint(0))
-            pts.append(c.GetEndPoint(1))
+    for poly in polys:
+        pts = poly["pts"]
         if pts:
-            xs = [p.X for p in pts]
-            ys = [p.Y for p in pts]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
             areas.append((max(xs) - min(xs)) * (max(ys) - min(ys)))
         else:
             areas.append(0.0)
 
     parent = [-1] * n
     for i in range(n):
+        inner_pts = polys[i]["pts"]
+        if not inner_pts:
+            continue
+        test_point = inner_pts[0]
         for j in range(n):
             if i == j:
                 continue
-            if areas[j] > areas[i] and check_if_loop_is_inside(curve_loops[i], curve_loops[j]):
+            if areas[j] > areas[i] and point_in_poly(test_point, polys[j]):
                 # smallest containing loop wins as parent
                 if parent[i] == -1 or areas[j] < areas[parent[i]]:
                     parent[i] = j
@@ -307,18 +374,17 @@ def analyze_loops(curve_loops):
     return main_indices, holes_of
 
 
-def classify_curve(curve, curve_loops):
-    """('boundary', loop_index) if the curve is a boundary segment of a loop,
-    ('symbolic', loop_index) if it is a free line inside a loop,
-    ('other', -1) otherwise."""
-    mid = _curve_midpoint(curve)
-    if mid is None:
+def classify_point(xy, polys):
+    """('boundary', loop_index) if the point lies on a loop outline,
+    ('symbolic', loop_index) if it is inside a loop,
+    ('other', -1) otherwise. Pure arithmetic on the captured snapshot."""
+    if xy is None:
         return ("other", -1)
-    for j, loop in enumerate(curve_loops):
-        if point_on_loop(mid, loop):
+    for j, poly in enumerate(polys):
+        if point_on_poly(xy, poly):
             return ("boundary", j)
-    for j, loop in enumerate(curve_loops):
-        if point_in_loop(mid, loop):
+    for j, poly in enumerate(polys):
+        if point_in_poly(xy, poly):
             return ("symbolic", j)
     return ("other", -1)
 
@@ -352,26 +418,26 @@ def copy_one_in_place(opening):
     return copies[0]
 
 
-def _expected_loop_counts(curve_loops):
+def _expected_loop_counts(polys):
     """Number of boundary curves each loop index should have."""
     expected = {}
-    for j, loop in enumerate(curve_loops):
-        expected[j] = sum(1 for _ in loop)
+    for j, poly in enumerate(polys):
+        expected[j] = poly["curve_count"]
     return expected
 
 
-def _count_boundary_elements(opening, sketch, curve_loops):
+def _count_boundary_elements(opening, sketch, polys):
     """Count boundary curve ELEMENTS currently present in the sketch, per
     loop index."""
     counts = {}
-    for (e, c) in get_sketch_curve_elements(opening, sketch):
-        kind, j = classify_curve(c, curve_loops)
+    for (e, xy) in get_sketch_curve_elements(opening, sketch):
+        kind, j = classify_point(xy, polys)
         if kind == "boundary":
             counts[j] = counts.get(j, 0) + 1
     return counts
 
 
-def reduce_opening_to_region(opening, keep_set, curve_loops):
+def reduce_opening_to_region(opening, keep_set, polys):
     """Edit the opening's sketch and delete every boundary loop / symbolic line
     that does NOT belong to a loop index in keep_set. Uses SketchEditScope.
     Returns kept_symbolic_count. Raises on managed failure.
@@ -386,13 +452,13 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
     if sketch is None:
         raise Exception("opening has no sketch")
 
-    expected = _expected_loop_counts(curve_loops)
+    expected = _expected_loop_counts(polys)
 
     delete_ids = []
     kept_symbolic = 0
     found_boundary = {}
-    for (e, c) in get_sketch_curve_elements(opening, sketch):
-        kind, j = classify_curve(c, curve_loops)
+    for (e, xy) in get_sketch_curve_elements(opening, sketch):
+        kind, j = classify_point(xy, polys)
         if kind == "boundary":
             found_boundary[j] = found_boundary.get(j, 0) + 1
             if j not in keep_set:
@@ -407,7 +473,7 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
     # Pre-check: every loop must be fully re-identified in THIS sketch. A
     # shortfall means classification drifted (tolerance) and deleting would
     # leave a broken sketch - skip this opening instead of risking the commit.
-    for j in range(len(curve_loops)):
+    for j in range(len(polys)):
         if found_boundary.get(j, 0) < expected.get(j, 0):
             raise Exception(
                 "loop {}: only {} of {} boundary curves identified in the "
@@ -446,7 +512,7 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
 
     # Post-check: kept loops must still be complete and removed loops fully
     # gone. Otherwise cancel the scope - never commit a broken sketch.
-    counts_after = _count_boundary_elements(opening, sketch, curve_loops)
+    counts_after = _count_boundary_elements(opening, sketch, polys)
     bad = None
     for j in keep_set:
         if counts_after.get(j, 0) < expected.get(j, 0):
@@ -454,7 +520,7 @@ def reduce_opening_to_region(opening, keep_set, curve_loops):
                 j, counts_after.get(j, 0), expected.get(j, 0))
             break
     if bad is None:
-        for j in range(len(curve_loops)):
+        for j in range(len(polys)):
             if j not in keep_set and counts_after.get(j, 0) > 0:
                 bad = "removed loop {} still has {} boundary curve(s)".format(
                     j, counts_after.get(j, 0))
@@ -488,7 +554,7 @@ def _group_keep_set(group, holes_of):
     return keep_set
 
 
-def _split_interleaved(opening, keep_sets, curve_loops):
+def _split_interleaved(opening, keep_sets, polys):
     """Shared engine: produce one opening per keep_set. Copies are made ONE AT
     A TIME and each copy is reduced immediately, so at most two full-sketch
     shafts overlap during any commit. The ORIGINAL is reduced last (to
@@ -503,7 +569,7 @@ def _split_interleaved(opening, keep_sets, curve_loops):
         cp = copy_one_in_place(src)
         print("  Copy {} -> reducing to {} loop(s)...".format(
             _eid_int(cp.Id), len(keep_set)))
-        kept = reduce_opening_to_region(cp, keep_set, curve_loops)
+        kept = reduce_opening_to_region(cp, keep_set, polys)
         symbolic_kept += kept
         result_openings.append(cp)
         print("    -> kept {} symbolic line(s)".format(kept))
@@ -511,7 +577,7 @@ def _split_interleaved(opening, keep_sets, curve_loops):
     src = doc.GetElement(original_id)
     print("  Reducing ORIGINAL {} to {} loop(s)...".format(
         _eid_int(original_id), len(keep_sets[0])))
-    kept = reduce_opening_to_region(src, keep_sets[0], curve_loops)
+    kept = reduce_opening_to_region(src, keep_sets[0], polys)
     symbolic_kept += kept
     result_openings.insert(0, src)
     print("    -> kept {} symbolic line(s)".format(kept))
@@ -519,16 +585,16 @@ def _split_interleaved(opening, keep_sets, curve_loops):
     return result_openings, symbolic_kept
 
 
-def _split_into_singles(opening, main_indices, holes_of, curve_loops):
+def _split_into_singles(opening, main_indices, holes_of, polys):
     """One opening per main boundary - fully split, each keeps its real
     Symbolic Lines."""
     keep_sets = [_group_keep_set([i], holes_of) for i in main_indices]
     result_openings, symbolic_kept = _split_interleaved(
-        opening, keep_sets, curve_loops)
+        opening, keep_sets, polys)
     return result_openings, symbolic_kept, False
 
 
-def _split_into_groups(opening, main_indices, holes_of, curve_loops):
+def _split_into_groups(opening, main_indices, holes_of, polys):
     """Too many boundaries for one safe run: instead of fully splitting all of
     them, produce one intermediate opening per batch of up to
     MAX_BOUNDARIES_PER_SPLIT boundaries (still multi-boundary). The caller
@@ -542,7 +608,7 @@ def _split_into_groups(opening, main_indices, holes_of, curve_loops):
               MAX_BOUNDARIES_PER_SPLIT))
     keep_sets = [_group_keep_set(g, holes_of) for g in groups]
     result_openings, symbolic_kept = _split_interleaved(
-        opening, keep_sets, curve_loops)
+        opening, keep_sets, polys)
     return result_openings, symbolic_kept, True
 
 
@@ -589,12 +655,17 @@ def split_shaft(opening, budget):
         print("  Shaft opening has only one boundary - skipping")
         return None
 
-    main_indices, holes_of = analyze_loops(curve_loops)
+    # Snapshot the geometry to plain numbers NOW, before anything modifies the
+    # document. Nothing below this line touches document geometry again.
+    polys = loops_to_polygons(curve_loops)
+    curve_loops = None
+
+    main_indices, holes_of = analyze_loops(polys)
     print("\n  Loops: {} total, {} main boundary(ies), {} hole(s)".format(
-        len(curve_loops), len(main_indices), len(curve_loops) - len(main_indices)))
+        len(polys), len(main_indices), len(polys) - len(main_indices)))
     _log("opening {}: {} loop(s), {} main, {} hole(s)".format(
-        _eid_int(opening.Id), len(curve_loops), len(main_indices),
-        len(curve_loops) - len(main_indices)))
+        _eid_int(opening.Id), len(polys), len(main_indices),
+        len(polys) - len(main_indices)))
 
     if len(main_indices) <= 1:
         print("  Only one main boundary - nothing to split")
@@ -611,8 +682,8 @@ def split_shaft(opening, budget):
         return DEFERRED
 
     if len(main_indices) > MAX_BOUNDARIES_PER_SPLIT:
-        return _split_into_groups(opening, main_indices, holes_of, curve_loops)
-    return _split_into_singles(opening, main_indices, holes_of, curve_loops)
+        return _split_into_groups(opening, main_indices, holes_of, polys)
+    return _split_into_singles(opening, main_indices, holes_of, polys)
 
 
 def main():
