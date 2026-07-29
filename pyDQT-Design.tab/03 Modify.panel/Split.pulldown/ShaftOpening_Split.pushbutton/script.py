@@ -31,6 +31,11 @@ before running. Everything is wrapped so that the ORIGINAL opening is never
 deleted - if a crash happens mid-run, closing without saving loses nothing.
 
 CRASH SAFEGUARDS:
+  - DEPENDENT-ELEMENT QUERIES ARE KEPT NARROW. Element.GetDependentElements
+    opens a temporary transaction internally; asking the OPENING for its
+    dependents with no filter drags in the floors and walls the shaft cuts
+    and their regeneration, and that scan is where Revit died. Only the
+    sketch is queried, and only for CurveElement.
   - NO DOCUMENT GEOMETRY IS HELD ACROSS A TRANSACTION. The boundary loops are
     converted to plain float polygons once, up front, and every containment
     test afterwards is pure arithmetic. Curve objects from Sketch.Profile are
@@ -233,31 +238,39 @@ def get_sketch_curve_elements(opening, sketch):
     lines), as a list of (element, (x, y)) where the tuple is the curve's
     MIDPOINT captured immediately as plain floats.
 
+    Only the SKETCH is queried, and only for CurveElement.
+    Element.GetDependentElements opens a temporary transaction internally to
+    work out the dependency closure. Calling it on the OPENING with a null
+    filter pulls in everything that depends on the shaft - including the
+    floors and walls it cuts, and their regeneration - which is where Revit
+    died during the scan. The sketch owns every curve we care about, so
+    asking it directly is both correct and vastly cheaper.
+
     The Curve wrapper itself is deliberately NOT returned - see
     loops_to_polygons() for why document geometry must never be held."""
+    if sketch is None:
+        return []
+    try:
+        dep = sketch.GetDependentElements(DB.ElementClassFilter(DB.CurveElement))
+    except Exception as ex:
+        _log("    (sketch dependent query failed: {})".format(ex))
+        return []
+
     found = {}
-    hosts = [opening]
-    if sketch is not None:
-        hosts.append(sketch)
-    for host in hosts:
+    for did in dep:
+        e = doc.GetElement(did)
+        if e is None:
+            continue
         try:
-            dep = host.GetDependentElements(None)
+            c = e.GeometryCurve
         except:
             continue
-        for did in dep:
-            e = doc.GetElement(did)
-            if e is None:
-                continue
-            try:
-                c = e.GeometryCurve
-            except:
-                continue
-            if c is None:
-                continue
-            mid = _curve_midpoint(c)
-            if mid is None:
-                continue
-            found[_eid_int(e.Id)] = (e, mid)
+        if c is None:
+            continue
+        mid = _curve_midpoint(c)
+        if mid is None:
+            continue
+        found[_eid_int(e.Id)] = (e, mid)
     return list(found.values())
 
 
@@ -476,6 +489,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
 
     expected = _expected_loop_counts(polys)
 
+    _log("reduce {}: querying sketch curve elements...".format(oid))
     curve_elements = get_sketch_curve_elements(opening, sketch)
     _log("reduce {}: scanned {} curve element(s), classifying...".format(
         oid, len(curve_elements)))
