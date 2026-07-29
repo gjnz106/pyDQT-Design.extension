@@ -49,12 +49,18 @@ CRASH SAFEGUARDS:
     %TEMP%/DQT_ShaftSplit.log. After a hard crash the LAST line of that file
     names the exact operation that died.
 
-SAFETY LIMIT: each SketchEditScope.Commit() carries some crash risk, so a
-single run only fully splits up to MAX_BOUNDARIES_PER_SPLIT boundaries. If a
-shaft has more than that (e.g. 100), it is instead divided into intermediate
-multi-boundary openings of at most MAX_BOUNDARIES_PER_SPLIT boundaries each
-(e.g. 100 -> 5 openings of 20). Re-run this tool on those intermediate
-openings to finish splitting them (pass 2, now under the limit).
+SAFETY LIMIT: each SketchEditScope.Commit() carries some crash risk, so every
+RUN gets a budget of MAX_BOUNDARIES_PER_SPLIT sketch commits, SHARED by all
+selected openings (each resulting opening costs exactly one commit). Selecting
+several openings can no longer multiply past the cap - once the budget is
+spent the remaining openings are deferred untouched to a later run.
+
+If one shaft has more boundaries than the limit (e.g. 100), it is divided into
+intermediate multi-boundary openings of at most MAX_BOUNDARIES_PER_SPLIT
+boundaries each (e.g. 100 -> 5 openings of 20), which costs only 5 commits.
+Re-run this tool on those intermediate openings to finish splitting them
+(pass 2). SAVE - ideally close and reopen - between passes: sketch edits stay
+in memory and stacking passes in one session is itself a crash factor.
 
 Dang Quoc Truong - DQT (c) 2026
 """
@@ -517,9 +523,34 @@ def _split_into_groups(opening, main_indices, holes_of, curve_loops):
     return result_openings, symbolic_kept, True
 
 
-def split_shaft(opening):
-    """Split one multi-boundary shaft opening. Returns
-    (result_openings, symbolic_kept, is_batch) or None if nothing to split.
+class _Deferred(object):
+    """Sentinel: the opening was left untouched because the run's commit
+    budget could not cover it (distinct from 'skipped, nothing to do')."""
+    pass
+
+
+DEFERRED = _Deferred()
+
+
+def _planned_cost(main_count):
+    """How many SketchEditScope commits processing this opening will cost.
+
+    Each resulting opening costs exactly one sketch commit, so a full split of
+    N boundaries costs N, while a grouping pass costs only the number of
+    groups. This is the number that must be budgeted per RUN - it is the
+    commit count, not the boundary count, that drives the crash risk."""
+    if main_count > MAX_BOUNDARIES_PER_SPLIT:
+        # grouping pass: ceil(N / MAX) groups
+        return (main_count + MAX_BOUNDARIES_PER_SPLIT - 1) // MAX_BOUNDARIES_PER_SPLIT
+    return main_count
+
+
+def split_shaft(opening, budget):
+    """Split one multi-boundary shaft opening, spending at most `budget`
+    sketch commits. Returns (result_openings, symbolic_kept, is_batch) or
+    None if nothing was done (skipped, or too expensive for the remaining
+    budget - see _planned_cost).
+
     is_batch is True when the boundary count exceeded
     MAX_BOUNDARIES_PER_SPLIT and result_openings are intermediate,
     still-multi-boundary groups that need a second Split pass rather than
@@ -546,6 +577,16 @@ def split_shaft(opening):
         print("  Only one main boundary - nothing to split")
         return None
 
+    cost = _planned_cost(len(main_indices))
+    if cost > budget:
+        print("  DEFERRED: this opening needs {} sketch commit(s) but only {} "
+              "left in this run's budget of {}.\n"
+              "  Save the model, then run Split again and select this opening "
+              "on its own.".format(cost, budget, MAX_BOUNDARIES_PER_SPLIT))
+        _log("opening {}: deferred (cost {} > budget {})".format(
+            _eid_int(opening.Id), cost, budget))
+        return DEFERRED
+
     if len(main_indices) > MAX_BOUNDARIES_PER_SPLIT:
         return _split_into_groups(opening, main_indices, holes_of, curve_loops)
     return _split_into_singles(opening, main_indices, holes_of, curve_loops)
@@ -561,12 +602,15 @@ def main():
             "parameters.\n\n"
             "IMPORTANT: this edits the shaft sketch (SketchEditScope), which can "
             "crash Revit on some builds. SAVE your model first.\n\n"
-            "SAFETY LIMIT: only up to {} boundaries are fully split per run. A "
-            "shaft with more boundaries is first divided into intermediate "
-            "openings of {} boundaries each - re-run Split on those to finish.\n\n"
+            "SAFETY LIMIT: {} sketch commits per run, SHARED by everything you "
+            "select. Openings that do not fit are deferred to a later run, and "
+            "a shaft with more boundaries than that is first divided into "
+            "intermediate openings - re-run Split on those to finish.\n\n"
+            "SAVE (ideally close and reopen) between passes - stacking passes "
+            "in one session is itself a crash factor.\n\n"
             "Openings inside a model group are skipped - ungroup them first.\n\n"
             "Click OK, then select the shaft opening(s) to split.".format(
-                MAX_BOUNDARIES_PER_SPLIT, MAX_BOUNDARIES_PER_SPLIT),
+                MAX_BOUNDARIES_PER_SPLIT),
             title="Split Shaft Opening Tool",
             ok=True, cancel=True)
         if not proceed:
@@ -613,14 +657,21 @@ def main():
         successful = 0
         failed = 0
         batch_ids = []
+        deferred = 0
+        # Budget is per RUN, shared by every selected opening - it is the
+        # total number of sketch commits that matters, not the count per
+        # opening.
+        budget = MAX_BOUNDARIES_PER_SPLIT
 
         for idx, oid in enumerate(selected_ids):
             print("\n" + "-" * 60)
             print("Processing shaft opening {}/{} (ID {})".format(
                 idx + 1, len(selected_ids), _eid_int(oid)))
             print("-" * 60)
-            _log("opening {} ({}/{}): processing...".format(
-                _eid_int(oid), idx + 1, len(selected_ids)))
+            _log("opening {} ({}/{}): processing... (budget left {})".format(
+                _eid_int(oid), idx + 1, len(selected_ids), budget))
+            print("  Run budget left: {} of {} sketch commit(s)".format(
+                budget, MAX_BOUNDARIES_PER_SPLIT))
             # Re-fetch fresh by Id - never reuse a wrapper that survived the
             # previous opening's commits/regenerations.
             opening = doc.GetElement(oid)
@@ -629,9 +680,13 @@ def main():
                 _log("opening {}: no longer valid, skipped".format(_eid_int(oid)))
                 continue
             try:
-                result = split_shaft(opening)
-                if result:
+                result = split_shaft(opening, budget)
+                if result is DEFERRED:
+                    deferred += 1
+                elif result:
                     result_openings, symbolic_kept, is_batch = result
+                    # Each resulting opening cost exactly one sketch commit.
+                    budget -= len(result_openings)
                     total_result += len(result_openings)
                     total_symbolic += symbolic_kept
                     successful += 1
@@ -661,6 +716,10 @@ def main():
         print("Failed splits            : {}".format(failed))
         print("Resulting shaft openings : {}".format(total_result))
         print("Symbolic lines preserved : {}".format(total_symbolic))
+        print("Sketch commits used      : {} of {}".format(
+            MAX_BOUNDARIES_PER_SPLIT - budget, MAX_BOUNDARIES_PER_SPLIT))
+        if deferred:
+            print("Deferred (budget)        : {} opening(s)".format(deferred))
         if batch_ids:
             print("Grouped, need 2nd pass   : {} opening(s) -> IDs {}".format(
                 len(batch_ids), ", ".join(str(i) for i in batch_ids)))
@@ -674,13 +733,23 @@ def main():
             "Resulting shaft openings: {}\n"
             "Symbolic lines preserved (native): {}"
         ).format(len(selected_ids), successful, failed, total_result, total_symbolic)
+        if deferred:
+            msg += (
+                "\n\nDeferred: {} opening(s) were left untouched because this "
+                "run's budget of {} sketch commits was already spent."
+            ).format(deferred, MAX_BOUNDARIES_PER_SPLIT)
         if batch_ids:
             msg += (
-                "\n\nSafety limit reached (max {} boundaries/run): {} of the "
-                "resulting openings still have several boundaries grouped "
+                "\n\nSafety limit reached (max {} sketch commits/run): {} of "
+                "the resulting openings still have several boundaries grouped "
                 "together.\nSelect them and run Split Shaft again to finish "
                 "(pass 2)."
             ).format(MAX_BOUNDARIES_PER_SPLIT, len(batch_ids))
+        if batch_ids or deferred:
+            msg += ("\n\nIMPORTANT: SAVE the model (and ideally close and "
+                    "reopen it) before the next pass. Sketch edits from this "
+                    "run stay in memory and running another pass on top of "
+                    "them in the same session is what has been crashing.")
         forms.alert(msg, title="Split Shaft Opening Summary")
 
     except Exception as e:
