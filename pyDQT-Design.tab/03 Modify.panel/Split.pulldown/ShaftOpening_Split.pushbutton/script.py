@@ -67,6 +67,11 @@ CRASH SAFEGUARDS:
     a boundary curve. That matters because the two are treated differently
     when a delete is refused: a leftover symbolic line is harmless, a
     leftover boundary curve means an open profile and cancels the split.
+  - A CURVE THAT SITS IN NO REGION IS ATTACHED TO THE NEAREST ONE. Leaving it
+    unclaimed sounds harmless but means every copy keeps it, so one stray line
+    in the source shaft comes back duplicated onto all N resulting openings.
+    Attaching it to the nearest region makes it survive exactly once, on the
+    opening it visually belongs to.
   - Deleting sketch curves can cascade, so the delete step re-scans and
     retries (_DELETE_PASSES) instead of failing an opening over a single
     curve that survived the first pass. If a pass removes nothing, the
@@ -505,30 +510,54 @@ def profile_loops_for(endpoints, polys, tol=_ON_LOOP_TOL):
     return hits
 
 
-def loops_at(xy, polys, endpoints=None):
-    """(on, inside): the loops this curve is a BOUNDARY curve of, and the
-    loops that merely contain it (i.e. it is a Symbolic Line in their region).
+def _dist_point_poly(xy, poly):
+    """Shortest distance from a point to a polygon's outline."""
+    px, py = xy
+    pts = poly["pts"]
+    best = None
+    for i in range(len(pts) - 1):
+        ax, ay = pts[i]
+        bx, by = pts[i + 1]
+        d = _dist_point_segment(px, py, ax, ay, bx, by)
+        if best is None or d < best:
+            best = d
+    return best
 
-    A curve counts as a boundary curve of loop j only when its endpoint pair
-    matches one of the curves in loop j's profile.  Matching against the
-    profile's segment list - rather than asking whether both endpoints happen
-    to land somewhere on the loop's outline - is what separates boundary
-    curves from Symbolic Lines: a shaft's symbolic X is drawn corner to
-    corner, so BOTH of its endpoints sit exactly on the region's outline and
-    outline-based matching labelled every single one of them a boundary curve.
-    That mislabelling is not cosmetic.  A symbolic line left behind by a
-    refused delete is inconsequential and the commit may proceed, whereas a
-    leftover BOUNDARY curve means an open profile and cancels the whole split
-    - so one stubborn symbolic line was failing openings that were fine.
 
-    Both lists matter because loops in one shaft can touch or share an edge.
-    A curve on a shared edge appears in two loops' profiles at once -
-    attributing it to just the first match makes the tool try to delete a
-    curve the remaining profile still needs, and Revit refuses with
-    "EditModeMgr element modifiable checker"."""
+def nearest_loop(xy, endpoints, polys):
+    """The single loop a stray curve is closest to, as a one-item list.
+
+    A curve that sits in no region at all still has to end up SOMEWHERE. It
+    used to be left alone, which sounds harmless but is not: "left alone"
+    means every copy keeps it, so a stray line drawn once in the source shaft
+    comes back duplicated onto all N resulting openings. Attaching it to the
+    nearest region instead makes it survive exactly once, on the opening it
+    visually belongs to - a line running out of a region's corner lands on
+    that region."""
+    probes = []
+    if xy is not None:
+        probes.append(xy)
+    if endpoints is not None:
+        probes.extend(endpoints)
+    best = None
+    best_d = None
+    for j, poly in enumerate(polys):
+        if len(poly["pts"]) < 2:
+            continue
+        for p in probes:
+            d = _dist_point_poly(p, poly)
+            if d is not None and (best_d is None or d < best_d):
+                best_d = d
+                best = j
+    return [] if best is None else [best]
+
+
+def classify_curve(xy, polys, endpoints=None):
+    """(on, inside, stray) - see loops_at(). `stray` says the curve matched no
+    region and was attached to the nearest one, which is worth logging."""
     on = profile_loops_for(endpoints, polys)
     if on:
-        return on, []
+        return on, [], False
 
     # Not a profile curve, so it is a symbolic line: report the region(s) it
     # belongs to, so it is kept with a retained loop and dropped with a
@@ -549,6 +578,37 @@ def loops_at(xy, polys, endpoints=None):
         for j, poly in enumerate(polys):
             if point_on_poly(xy, poly):
                 inside.append(j)
+    if inside:
+        return on, inside, False
+
+    return on, nearest_loop(xy, endpoints, polys), True
+
+
+def loops_at(xy, polys, endpoints=None):
+    """(on, inside): the loops this curve is a BOUNDARY curve of, and the
+    loops that merely contain it (i.e. it is a Symbolic Line in their region).
+
+    A curve counts as a boundary curve of loop j only when its endpoint pair
+    matches one of the curves in loop j's profile.  Matching against the
+    profile's segment list - rather than asking whether both endpoints happen
+    to land somewhere on the loop's outline - is what separates boundary
+    curves from Symbolic Lines: a shaft's symbolic X is drawn corner to
+    corner, so BOTH of its endpoints sit exactly on the region's outline and
+    outline-based matching labelled every single one of them a boundary curve.
+    That mislabelling is not cosmetic.  A symbolic line left behind by a
+    refused delete is inconsequential and the commit may proceed, whereas a
+    leftover BOUNDARY curve means an open profile and cancels the whole split
+    - so one stubborn symbolic line was failing openings that were fine.
+
+    Both lists matter because loops in one shaft can touch or share an edge.
+    A curve on a shared edge appears in two loops' profiles at once -
+    attributing it to just the first match makes the tool try to delete a
+    curve the remaining profile still needs, and Revit refuses with
+    "EditModeMgr element modifiable checker".
+
+    A curve matching nothing at all is attached to the nearest region rather
+    than left unclaimed - see nearest_loop()."""
+    on, inside, _stray = classify_curve(xy, polys, endpoints)
     return on, inside
 
 
@@ -558,7 +618,11 @@ def _is_removable(on, inside, keep_set):
         return not any(j in keep_set for j in on)
     if inside:
         return not any(j in keep_set for j in inside)
-    return False   # belongs to no loop - leave it alone
+    # Reached only when the sketch has no usable polygon to attach to at all;
+    # anything else is given a nearest region by classify_curve(). Keeping it
+    # is the safe choice for a curve we cannot place - it is the ONE case
+    # where the curve survives on every resulting opening.
+    return False
 
 
 def _near_any_kept_boundary(xy, polys, keep_set, tol):
@@ -737,8 +801,11 @@ def reduce_opening_to_region(opening, keep_set, polys):
     found_boundary = {}
     shared = 0
     unmatched = 0
+    stray = 0
     for (e, xy, eps) in curve_elements:
-        on, inside = loops_at(xy, polys, eps)
+        on, inside, is_stray = classify_curve(xy, polys, eps)
+        if is_stray:
+            stray += 1
         for j in on:
             found_boundary[j] = found_boundary.get(j, 0) + 1
         if _is_removable(on, inside, keep_set):
@@ -751,11 +818,15 @@ def reduce_opening_to_region(opening, keep_set, polys):
             elif inside and any(j in keep_set for j in inside):
                 kept_symbolic += 1
     _log("reduce {}: classification: {} to delete, {} shared-edge, {} kept "
-         "symbolic, {} unmatched".format(
-             oid, len(delete_ids), shared, kept_symbolic, unmatched))
+         "symbolic, {} stray, {} unmatched".format(
+             oid, len(delete_ids), shared, kept_symbolic, stray, unmatched))
     if shared:
         _log("reduce {}: {} curve(s) lie on a shared edge and are kept "
              "because a retained loop still needs them".format(oid, shared))
+    if stray:
+        _log("reduce {}: {} curve(s) sit in no region and were attached to "
+             "the nearest one, so they survive on exactly one opening instead "
+             "of being copied onto every one".format(oid, stray))
 
     # Pre-check: every loop that we plan to REMOVE must be fully identified
     # so we know exactly which curves to delete.  For loops we are KEEPING, a
