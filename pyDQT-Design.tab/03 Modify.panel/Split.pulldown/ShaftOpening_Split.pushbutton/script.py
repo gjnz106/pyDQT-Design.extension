@@ -54,6 +54,19 @@ CRASH SAFEGUARDS:
     "identical instances in the same place" on every copy - the copy is only
     identical for the moment before it is trimmed - so without this the user
     has to click through one dialog per copy.
+  - CURVES ARE DELETED AS A SET, not one at a time. Revit resolves an
+    ICollection delete in one operation, so curves that hold each other up go
+    away together; deleting them individually exposes intermediate states
+    where the still-present rest of the sketch owns a curve and Revit refuses
+    it ("EditModeMgr element modifiable checker"). One stuck curve out of ~96
+    used to fail an entire opening. One-at-a-time remains the fallback.
+  - BOUNDARY CURVES ARE TOLD APART FROM SYMBOLIC LINES BY MATCHING THE
+    PROFILE, not by proximity. A shaft's symbolic X is drawn corner to corner,
+    so both of its endpoints sit exactly on the region's outline - asking
+    "are both endpoints on this loop's outline?" labelled every symbolic line
+    a boundary curve. That matters because the two are treated differently
+    when a delete is refused: a leftover symbolic line is harmless, a
+    leftover boundary curve means an open profile and cancels the split.
   - Deleting sketch curves can cascade, so the delete step re-scans and
     retries (_DELETE_PASSES) instead of failing an opening over a single
     curve that survived the first pass. If a pass removes nothing, the
@@ -354,13 +367,21 @@ def loops_to_polygons(curve_loops):
     later containment test is pure Python and can never touch stale geometry.
 
     Returns a list of dicts: {"pts": [(x, y), ...] closed ring,
-    "curve_count": how many curves the loop had}."""
+    "curve_count": how many curves the loop had, "ends": [((x0,y0),(x1,y1)),
+    ...] one endpoint pair per PROFILE curve}.
+
+    "ends" is what tells a boundary curve apart from a Symbolic Line later on
+    - see loops_at()."""
     polys = []
     for loop in curve_loops:
         pts = []
+        ends = []
         curve_count = 0
         for c in loop:
             curve_count += 1
+            eps = _curve_endpoints(c)
+            if eps is not None:
+                ends.append(eps)
             try:
                 tess = c.Tessellate()
             except:
@@ -377,7 +398,7 @@ def loops_to_polygons(curve_loops):
                     pts.append(xy)
         if pts and pts[0] != pts[-1]:
             pts.append(pts[0])       # close the ring
-        polys.append({"pts": pts, "curve_count": curve_count})
+        polys.append({"pts": pts, "curve_count": curve_count, "ends": ends})
     return polys
 
 
@@ -460,45 +481,74 @@ def analyze_loops(polys):
     return main_indices, holes_of
 
 
-def loops_at(xy, polys, endpoints=None):
-    """(on, inside): EVERY loop whose outline the point lies on, and every
-    loop that strictly contains it.
+def _same_point(a, b, tol=_ON_LOOP_TOL):
+    return abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
 
-    When endpoints are provided, boundary detection uses BOTH endpoints of
-    the curve: if both endpoints lie on a polygon's boundary, the curve is
-    classified as a boundary curve of that loop.  This is far more reliable
-    than midpoint matching because endpoints are exact polygon vertices
-    (shared between adjacent curves in a loop), whereas the midpoint of an
-    arc sits between the chord-based polygon segments and can miss the
-    tolerance entirely.  Midpoint matching is still used as a fallback for
-    any curve where endpoint matching finds nothing (e.g. symbolic lines
-    whose endpoints are inside a loop, not on its boundary).
+
+def profile_loops_for(endpoints, polys, tol=_ON_LOOP_TOL):
+    """Loop indices whose snapshotted PROFILE contains a curve with exactly
+    these endpoints (either orientation).
+
+    This is an identity test against the loops the sketch actually declares as
+    its boundary, not a proximity test - a curve either IS one of the profile
+    curves or it is not."""
+    if endpoints is None:
+        return []
+    ep0, ep1 = endpoints
+    hits = []
+    for j, poly in enumerate(polys):
+        for (q0, q1) in poly.get("ends", ()):
+            if ((_same_point(ep0, q0, tol) and _same_point(ep1, q1, tol)) or
+                    (_same_point(ep0, q1, tol) and _same_point(ep1, q0, tol))):
+                hits.append(j)
+                break
+    return hits
+
+
+def loops_at(xy, polys, endpoints=None):
+    """(on, inside): the loops this curve is a BOUNDARY curve of, and the
+    loops that merely contain it (i.e. it is a Symbolic Line in their region).
+
+    A curve counts as a boundary curve of loop j only when its endpoint pair
+    matches one of the curves in loop j's profile.  Matching against the
+    profile's segment list - rather than asking whether both endpoints happen
+    to land somewhere on the loop's outline - is what separates boundary
+    curves from Symbolic Lines: a shaft's symbolic X is drawn corner to
+    corner, so BOTH of its endpoints sit exactly on the region's outline and
+    outline-based matching labelled every single one of them a boundary curve.
+    That mislabelling is not cosmetic.  A symbolic line left behind by a
+    refused delete is inconsequential and the commit may proceed, whereas a
+    leftover BOUNDARY curve means an open profile and cancels the whole split
+    - so one stubborn symbolic line was failing openings that were fine.
 
     Both lists matter because loops in one shaft can touch or share an edge.
-    A curve on a shared edge belongs to two loops at once - attributing it to
-    just the first match (as this used to) makes the tool try to delete a
+    A curve on a shared edge appears in two loops' profiles at once -
+    attributing it to just the first match makes the tool try to delete a
     curve the remaining profile still needs, and Revit refuses with
     "EditModeMgr element modifiable checker"."""
-    if xy is None:
-        return [], []
-    on = []
-    inside = []
+    on = profile_loops_for(endpoints, polys)
+    if on:
+        return on, []
 
-    # Primary: endpoint-based boundary detection (exact for all curve types)
-    if endpoints is not None:
+    # Not a profile curve, so it is a symbolic line: report the region(s) it
+    # belongs to, so it is kept with a retained loop and dropped with a
+    # removed one.
+    inside = []
+    if xy is not None:
+        for j, poly in enumerate(polys):
+            if point_in_poly(xy, poly):
+                inside.append(j)
+    if not inside and endpoints is not None:
+        # A symbolic line can run along the outline instead of across the
+        # region, putting its midpoint on the boundary rather than inside it.
         ep0, ep1 = endpoints
         for j, poly in enumerate(polys):
             if point_on_poly(ep0, poly) and point_on_poly(ep1, poly):
-                on.append(j)
-        if on:
-            return on, []
-
-    # Fallback: midpoint matching (for symbolic lines, or if no endpoints)
-    for j, poly in enumerate(polys):
-        if point_on_poly(xy, poly):
-            on.append(j)
-        elif point_in_poly(xy, poly):
-            inside.append(j)
+                inside.append(j)
+    if not inside and xy is not None:
+        for j, poly in enumerate(polys):
+            if point_on_poly(xy, poly):
+                inside.append(j)
     return on, inside
 
 
@@ -598,6 +648,34 @@ def _describe_element(eid):
     return " / ".join(bits) if bits else "?"
 
 
+def _delete_curves(ids):
+    """Delete sketch curves as a SET first, one at a time only as a fallback.
+
+    Revit resolves an ICollection delete as a single operation, so curves that
+    hold each other up - a constrained pair, a shared endpoint, a symbolic
+    line hanging off a boundary corner - go away together. Deleting the very
+    same curves one by one exposes intermediate states where the rest of the
+    still-present sketch owns a curve, and Revit then refuses it with "Illegal
+    attempt to delete element. Reason: EditModeMgr element modifiable
+    checker". That refusal is what has been failing large shafts: one curve
+    out of ~96 gets stuck, and a stuck curve fails the whole opening."""
+    batch = List[ElementId]()
+    for did in ids:
+        batch.Add(did)
+    try:
+        doc.Delete(batch)
+        return
+    except Exception as ex:
+        _log("    set delete of {} curve(s) rejected ({}) - falling back to "
+             "one at a time".format(len(ids), ex))
+    for did in ids:
+        try:
+            doc.Delete(did)
+        except Exception as ex:
+            _log("    delete failed for {} [{}]: {}".format(
+                _eid_int(did), _describe_element(did), ex))
+
+
 def _stragglers(opening, sketch, keep_set, polys):
     """Curve elements still present that nothing we are keeping needs.
 
@@ -612,9 +690,9 @@ def _stragglers(opening, sketch, keep_set, polys):
         on, inside = loops_at(xy, polys, eps)
         if _is_removable(on, inside, keep_set):
             if on:
-                boundary.append((e.Id, xy))
+                boundary.append((e.Id, xy, eps, on))
             else:
-                symbolic.append((e.Id, xy))
+                symbolic.append((e.Id, xy, eps, inside))
     return boundary, symbolic
 
 
@@ -724,12 +802,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
         t.Start()
         _set_silent_failures(t)
         try:
-            for did in delete_ids:
-                try:
-                    doc.Delete(did)
-                except Exception as ex:
-                    _log("    delete failed for {} [{}]: {}".format(
-                        _eid_int(did), _describe_element(did), ex))
+            _delete_curves(delete_ids)
             _log("reduce {}: pass {} deletes done, committing...".format(
                 oid, attempt))
             t.Commit()
@@ -744,7 +817,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
             raise
 
         bnd_left, sym_left = _stragglers(opening, sketch, keep_set, polys)
-        delete_ids = [eid for eid, _ in bnd_left] + [eid for eid, _ in sym_left]
+        delete_ids = [t[0] for t in bnd_left] + [t[0] for t in sym_left]
         if not delete_ids:
             break
         # Retrying only helps when the pass actually removed something; if the
@@ -775,7 +848,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
         # Revit is telling us it is a shared-edge curve that the polygon
         # approximation missed at the normal tolerance.
         true_bnd = []
-        for (eid, xy) in bnd_left:
+        for (eid, xy, eps, on) in bnd_left:
             if _near_any_kept_boundary(xy, polys, keep_set,
                                        _SHARED_EDGE_FALLBACK_TOL):
                 _log("reduce {}: straggler {} reclassified as shared-edge "
@@ -783,8 +856,13 @@ def reduce_opening_to_region(opening, keep_set, polys):
                          oid, _eid_int(eid)))
             else:
                 true_bnd.append(eid)
-                _log("reduce {}: true straggler {} [{}]".format(
-                    oid, _eid_int(eid), _describe_element(eid)))
+                # Spell out WHY this counts as a boundary curve, so a repeat
+                # failure can be diagnosed straight from the log instead of
+                # needing another run in Revit.
+                _log("reduce {}: true straggler {} [{}] profile-curve of loop"
+                     "(s) {} / mid={} / ends={}".format(
+                         oid, _eid_int(eid), _describe_element(eid), on,
+                         xy, eps))
 
         if true_bnd:
             bad = "{} boundary curve(s) from removed loops could not be " \
