@@ -5,6 +5,17 @@ Split Shaft Opening Tool (copy-paste method)
 Splits a shaft opening that has several disconnected boundary loops into
 separate individual shaft openings.
 
+CHOOSING WHAT TO SPLIT: the tool first SURVEYS the shaft openings (whole
+model, active view, current selection, or the ones you pick) and reports how
+many separate regions each single opening actually contains, plus its holes,
+its Base/Top constraint and how many sketch commits splitting it would cost.
+A shaft that looks like one element in the project browser is frequently a
+dozen regions drawn in one sketch, and there is no native way to see that
+count - so the survey is what tells the user which openings are worth
+splitting at all. The multi-region ones are then offered as a checklist,
+biggest first, and only the ticked ones are split. The survey is read-only:
+it opens no transaction and keeps no Revit geometry.
+
 METHOD (per DQT's spec - mirrors the manual workflow):
   1. Copy-paste the shaft in place ONE COPY AT A TIME. Each copy is a faithful
      duplicate: same sketch (ALL boundary loops + any holes + the user's
@@ -125,7 +136,7 @@ __author__ = "DQT"
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI.Selection import ObjectType
-from pyrevit import revit, DB, UI, forms
+from pyrevit import revit, DB, UI, forms, script
 from System.Collections.Generic import List
 import clr
 clr.AddReference('System.Core')
@@ -1211,6 +1222,417 @@ def split_shaft(opening, budget):
     return _split_into_singles(opening, main_indices, holes_of, polys)
 
 
+# ---------------------------------------------------------------------------
+# SURVEY - how many regions does each shaft opening actually hold?
+#
+# Revit shows a multi-region shaft as ONE element with no hint of how many
+# separate regions its sketch contains, so the user cannot tell which openings
+# are worth splitting without opening every sketch by hand. The survey answers
+# that before anything is modified.
+#
+# It is strictly read-only: no transaction, no edit scope, and - like the rest
+# of this tool - it never keeps a Revit geometry object. loops_to_polygons()
+# turns the profile into plain floats, the counts are taken from those, and the
+# polygons are dropped when the function returns. Only integers survive, so a
+# survey taken before a split can never hand stale native memory to the split.
+# ---------------------------------------------------------------------------
+
+SCAN_MODEL = "Scan the whole model"
+SCAN_VIEW = "Scan the active view"
+SCAN_SELECTION = "Scan the current selection"
+PICK_IN_VIEW = "Pick openings in the view"
+
+
+class OpeningSurvey(object):
+    """What one shaft opening contains, counted without touching the model.
+
+    Doubles as the row object for forms.SelectFromList - the picker reads
+    `name`, and hands the very same objects back as the selection."""
+
+    def __init__(self, opening):
+        self.eid = opening.Id
+        self.id_int = _eid_int(opening.Id)
+        self.in_group = _in_group(opening)
+        self.constraint = _constraint_text(opening)
+        self.loop_count = 0
+        self.region_count = 0
+        self.hole_count = 0
+        self.error = None
+
+    @property
+    def splittable(self):
+        """True when running Split on this opening would actually do work."""
+        return (self.error is None and self.region_count > 1
+                and not self.in_group)
+
+    @property
+    def cost(self):
+        """Sketch commits splitting this opening would spend from the run
+        budget - the number that matters, not the region count (a shaft over
+        the limit is grouped instead of fully split and costs far less)."""
+        if self.region_count < 2:
+            return 0
+        return _planned_cost(self.region_count)
+
+    @property
+    def note(self):
+        """Why this opening will not be split, or what is unusual about it."""
+        if self.error:
+            return "cannot be read: {}".format(self.error)
+        if self.in_group:
+            return "in a model group - ungroup it first"
+        if self.region_count < 2:
+            return "single region - nothing to split"
+        if self.region_count > MAX_BOUNDARIES_PER_SPLIT:
+            return ("over the {}-region limit - splits into {} intermediate "
+                    "opening(s), needs a 2nd pass".format(
+                        MAX_BOUNDARIES_PER_SPLIT, self.cost))
+        return ""
+
+    @property
+    def name(self):
+        """Row label in the picker."""
+        bits = ["{} regions".format(str(self.region_count).rjust(3))]
+        if self.hole_count:
+            bits.append("{} hole(s)".format(self.hole_count))
+        bits.append("ID {}".format(self.id_int))
+        if self.constraint:
+            bits.append(self.constraint)
+        bits.append("{} commit(s)".format(self.cost))
+        if self.note:
+            bits.append(self.note.upper())
+        return "  |  ".join(bits)
+
+    def __str__(self):
+        # The label carries level names, which are routinely non-ASCII in a
+        # Vietnamese model ("Tang 1"). IronPython's str() would try to encode
+        # that as ASCII and raise, so fall back rather than break a picker row.
+        try:
+            return str(self.name)
+        except:
+            return "shaft opening {}".format(self.id_int)
+
+
+def _constraint_text(opening):
+    """The opening's Base/Top constraint as a short label (e.g. L1 -> L5).
+
+    Purely to tell two otherwise identical rows apart in the picker, so it is
+    never allowed to fail a survey."""
+    names = []
+    for bip in (DB.BuiltInParameter.WALL_BASE_CONSTRAINT,
+                DB.BuiltInParameter.WALL_HEIGHT_TYPE):
+        try:
+            p = opening.get_Parameter(bip)
+            v = p.AsValueString() if p is not None else None
+        except:
+            v = None
+        if v:
+            names.append(v)
+    return " -> ".join(names)
+
+
+def _build_sketch_map():
+    """{owner element id : Sketch} for the whole document, in one collector
+    pass.
+
+    get_sketch() asks each opening for its dependents, and that call opens a
+    temporary transaction internally - fine for the handful of openings a
+    split touches, needlessly slow when surveying every shaft in a model.
+    Reading Sketch.OwnerId off a plain collector costs one pass for all of
+    them. OwnerId is not available on every Revit build, so a miss (or an
+    empty map) simply falls back to get_sketch() per opening."""
+    m = {}
+    try:
+        for sk in FilteredElementCollector(doc).OfClass(DB.Sketch):
+            try:
+                owner = sk.OwnerId
+            except:
+                return {}
+            if owner is not None and owner != ElementId.InvalidElementId:
+                m[_eid_int(owner)] = sk
+    except Exception as ex:
+        _log("survey: sketch map unavailable ({}) - falling back to "
+             "per-opening lookup".format(ex))
+        return {}
+    return m
+
+
+def _collect_shaft_openings(scope):
+    """Shaft openings in the requested scope, as elements."""
+    if scope == SCAN_SELECTION:
+        elems = []
+        try:
+            for sid in uidoc.Selection.GetElementIds():
+                elems.append(doc.GetElement(sid))
+        except Exception as ex:
+            _log("survey: reading the current selection failed: {}".format(ex))
+        return [e for e in elems if e is not None and is_shaft_opening(e)]
+
+    try:
+        if scope == SCAN_VIEW:
+            # Not every active view can host a collector (a schedule or a view
+            # template throws), so this is worth guarding rather than letting
+            # the tool die before it has done anything.
+            col = FilteredElementCollector(doc, doc.ActiveView.Id)
+        else:
+            col = FilteredElementCollector(doc)
+        col = col.OfCategory(
+            DB.BuiltInCategory.OST_ShaftOpening).WhereElementIsNotElementType()
+        return [e for e in col if is_shaft_opening(e)]
+    except Exception as ex:
+        _log("survey: collecting openings ({}) failed: {}".format(scope, ex))
+        forms.alert("Could not read shaft openings from this view - try "
+                    "scanning the whole model instead.\n\n{}".format(ex),
+                    title="DQT - Split Shaft")
+        return None     # None = already explained, don't report "none found"
+
+
+def survey_opening(opening, sketch_map=None):
+    """Count the regions and holes of one opening. Never raises: an opening
+    that cannot be read is reported as a row with an error, not a dead run."""
+    s = OpeningSurvey(opening)
+    try:
+        sketch = sketch_map.get(s.id_int) if sketch_map else None
+        if sketch is None:
+            sketch = get_sketch(opening)
+        if sketch is None:
+            s.error = "no sketch"
+            return s
+        polys = loops_to_polygons(get_curve_loops_from_sketch(sketch))
+        if not polys:
+            s.error = "no boundary loops"
+            return s
+        main_indices, _holes_of = analyze_loops(polys)
+        s.loop_count = len(polys)
+        s.region_count = len(main_indices)
+        s.hole_count = len(polys) - len(main_indices)
+        # polys dies with this frame - only the three counts leave.
+    except Exception as ex:
+        s.error = str(ex)
+        _log("survey: opening {} could not be read: {}".format(s.id_int, ex))
+    return s
+
+
+def survey_openings(openings):
+    """Survey a list of openings, with a cancellable progress bar."""
+    if not openings:
+        return []
+    sketch_map = _build_sketch_map()
+    _log("survey: {} opening(s) to count, sketch map holds {} entry(ies)"
+         .format(len(openings), len(sketch_map)))
+    surveys = []
+    total = len(openings)
+    with forms.ProgressBar(
+            title="DQT - Counting shaft regions: {value} of {max_value}",
+            cancellable=True) as pb:
+        for i, op in enumerate(openings):
+            if pb.cancelled:
+                _log("survey: cancelled after {} of {} opening(s)".format(
+                    i, total))
+                break
+            surveys.append(survey_opening(op, sketch_map))
+            pb.update_progress(i + 1, total)
+    _log("survey: {} opening(s) counted".format(len(surveys)))
+    return surveys
+
+
+def _id_link(survey):
+    """The element id as a clickable link in the pyRevit output window, so a
+    row in the statistics table selects that shaft in the model."""
+    try:
+        return script.get_output().linkify(survey.eid)
+    except:
+        return str(survey.id_int)
+
+
+def print_survey(surveys, scope_label):
+    """The statistics table: one row per shaft opening, most regions first."""
+    print("\n" + "=" * 60)
+    print("SHAFT OPENING SURVEY - {}".format(scope_label))
+    print("=" * 60)
+    if not surveys:
+        print("  No shaft opening found.")
+        return
+
+    for s in sorted(surveys, key=lambda x: (-x.region_count, x.id_int)):
+        line = "  {} region(s), {} hole(s)  |  ID {}".format(
+            str(s.region_count).rjust(3), str(s.hole_count).rjust(2),
+            _id_link(s))
+        if s.constraint:
+            line += "  |  " + s.constraint
+        if s.note:
+            line += "  |  " + s.note
+        print(line)
+
+    multi = [s for s in surveys if s.region_count > 1]
+    splittable = [s for s in multi if s.splittable]
+    print("-" * 60)
+    print("  Shaft openings found      : {}".format(len(surveys)))
+    print("  Holding several regions   : {}".format(len(multi)))
+    print("  Regions inside those      : {}".format(
+        sum(s.region_count for s in multi)))
+    print("  Sketch commits to split   : {} (this run can spend {})".format(
+        sum(s.cost for s in splittable), MAX_BOUNDARIES_PER_SPLIT))
+    grouped = [s for s in multi if s.in_group]
+    if grouped:
+        print("  Blocked by a model group  : {}".format(len(grouped)))
+    unreadable = [s for s in surveys if s.error]
+    if unreadable:
+        print("  Could not be read         : {}".format(len(unreadable)))
+    print("=" * 60)
+    _log("survey: {} opening(s), {} multi-region, {} region(s) total".format(
+        len(surveys), len(multi), sum(s.region_count for s in multi)))
+
+
+def _simulate_budget(surveys):
+    """(fits, deferred) - what this run can actually reach.
+
+    Mirrors the main loop exactly: the budget is spent in order and an opening
+    that does not fit is deferred, but the loop keeps going, so a cheap opening
+    after an expensive one can still be processed."""
+    budget = MAX_BOUNDARIES_PER_SPLIT
+    fits = []
+    deferred = []
+    for s in surveys:
+        if not s.splittable:
+            continue        # skipped outright - costs nothing
+        if s.cost <= budget:
+            fits.append(s)
+            budget -= s.cost
+        else:
+            deferred.append(s)
+    return fits, deferred
+
+
+def confirm_selection(chosen):
+    """Show what this run will and will not get to, before the first commit.
+
+    The budget is per RUN and shared by everything selected, so ticking six big
+    shafts does not split six shafts. Saying so up front beats letting the user
+    find out from the summary once the budget is gone."""
+    fits, deferred = _simulate_budget(chosen)
+    skipped = [s for s in chosen if not s.splittable]
+
+    print("\nPLAN: {} opening(s) selected, {} will be split this run "
+          "({} of {} commit(s))".format(
+              len(chosen), len(fits), sum(s.cost for s in fits),
+              MAX_BOUNDARIES_PER_SPLIT))
+    for s in fits:
+        print("  will split : ID {} - {} region(s), {} commit(s)".format(
+            s.id_int, s.region_count, s.cost))
+    for s in deferred:
+        print("  deferred   : ID {} - {} region(s), needs {} commit(s)".format(
+            s.id_int, s.region_count, s.cost))
+    for s in skipped:
+        print("  skipped    : ID {} - {}".format(s.id_int, s.note))
+
+    if not fits:
+        reasons = []
+        if skipped:
+            reasons.append("{} skipped: {}".format(
+                len(skipped),
+                "; ".join(sorted(set(s.note for s in skipped)))))
+        if deferred:
+            reasons.append(
+                "{} need more than this run's budget of {} sketch "
+                "commits".format(len(deferred), MAX_BOUNDARIES_PER_SPLIT))
+        forms.alert("Nothing in this selection can be split.\n\n{}".format(
+            "\n".join(reasons)), title="DQT - Split Shaft")
+        return False
+
+    if not deferred and not skipped:
+        return True
+
+    msg = "{} of the {} opening(s) you selected will be split in this run, " \
+          "spending {} of the {} sketch commits.\n".format(
+              len(fits), len(chosen), sum(s.cost for s in fits),
+              MAX_BOUNDARIES_PER_SPLIT)
+    if deferred:
+        msg += ("\nDeferred to a later run (budget): {}\n"
+                "Run Split again on them after saving.".format(
+                    ", ".join(str(s.id_int) for s in deferred)))
+    if skipped:
+        msg += "\n\nSkipped: {}".format(
+            ", ".join("{} ({})".format(s.id_int, s.note) for s in skipped))
+    msg += "\n\nContinue?"
+    return bool(forms.alert(msg, title="DQT - Split Shaft: this run's plan",
+                            ok=True, cancel=True))
+
+
+def pick_openings_in_view():
+    """The manual route: pick the openings in the model."""
+    try:
+        refs = uidoc.Selection.PickObjects(
+            ObjectType.Element,
+            "Select shaft openings to split (ESC / Finish when done)")
+    except:
+        return []
+    openings = []
+    for ref in refs:
+        el = doc.GetElement(ref.ElementId)
+        if is_shaft_opening(el):
+            openings.append(el)
+        else:
+            print("Skipping non-shaft element (ID {})".format(
+                _eid_int(ref.ElementId)))
+    return openings
+
+
+def choose_openings():
+    """Survey first, then let the user tick what to split.
+
+    Returns the chosen OpeningSurvey list (possibly empty = user cancelled)."""
+    mode = forms.CommandSwitchWindow.show(
+        [SCAN_MODEL, SCAN_VIEW, SCAN_SELECTION, PICK_IN_VIEW],
+        message="DQT - Split Shaft: how do you want to choose the openings?")
+    if not mode:
+        return []
+
+    _log("selection mode: {}".format(mode))
+    if mode == PICK_IN_VIEW:
+        openings = pick_openings_in_view()
+        if not openings:
+            forms.alert("No shaft openings selected.",
+                        title="DQT - Split Shaft")
+            return []
+    else:
+        openings = _collect_shaft_openings(mode)
+        if openings is None:
+            return []
+        if not openings:
+            forms.alert("No shaft opening found - {}.".format(mode.lower()),
+                        title="DQT - Split Shaft")
+            return []
+
+    surveys = survey_openings(openings)
+    print_survey(surveys, mode)
+    if not surveys:
+        return []
+
+    # Picked by hand: the user has already said which ones they mean, so the
+    # survey is a report and the selection stands as picked.
+    if mode == PICK_IN_VIEW:
+        return surveys
+
+    candidates = [s for s in surveys if s.region_count > 1]
+    if not candidates:
+        forms.alert(
+            "{} shaft opening(s) found, but every one of them has a single "
+            "region - there is nothing to split.".format(len(surveys)),
+            title="DQT - Split Shaft")
+        return []
+
+    candidates.sort(key=lambda x: (-x.region_count, x.id_int))
+    chosen = forms.SelectFromList.show(
+        candidates,
+        title="DQT - {} shaft opening(s) hold several regions - tick the "
+              "ones to split".format(len(candidates)),
+        button_name="Split selected",
+        multiselect=True,
+        width=760)
+    return list(chosen) if chosen else []
+
+
 def main():
     try:
         proceed = forms.alert(
@@ -1219,6 +1641,9 @@ def main():
             "Method: copy the shaft in place, then trim each copy down to one "
             "region - so every result keeps its real Symbolic Lines, holes and "
             "parameters.\n\n"
+            "The tool first counts the regions inside each shaft opening and "
+            "lists them, so you can see which openings actually hold several "
+            "regions and tick the ones you want split.\n\n"
             "IMPORTANT: this edits the shaft sketch (SketchEditScope), which can "
             "crash Revit on some builds. SAVE your model first.\n\n"
             "SAFETY LIMIT: {} sketch commits per run, SHARED by everything you "
@@ -1228,30 +1653,19 @@ def main():
             "SAVE (ideally close and reopen) between passes - stacking passes "
             "in one session is itself a crash factor.\n\n"
             "Openings inside a model group are skipped - ungroup them first.\n\n"
-            "Click OK, then select the shaft opening(s) to split.".format(
+            "Click OK to choose the shaft opening(s) to split.".format(
                 MAX_BOUNDARIES_PER_SPLIT),
             title="Split Shaft Opening Tool",
             ok=True, cancel=True)
         if not proceed:
             return
 
-        selected_ids = []
-        try:
-            refs = uidoc.Selection.PickObjects(
-                ObjectType.Element,
-                "Select shaft openings to split (ESC / Finish when done)")
-        except:
+        chosen = choose_openings()
+        if not chosen:
             return
-
-        for ref in refs:
-            el = doc.GetElement(ref.ElementId)
-            if is_shaft_opening(el):
-                selected_ids.append(ref.ElementId)
-            else:
-                print("Skipping non-shaft element (ID {})".format(_eid_int(ref.ElementId)))
-
-        if not selected_ids:
-            forms.alert("No shaft openings selected.", exitscript=True)
+        if not confirm_selection(chosen):
+            return
+        selected_ids = [s.eid for s in chosen]
 
         # Clear the UI selection before editing - deleting / sketch-editing
         # elements that sit in the active selection set is one more native
