@@ -67,6 +67,13 @@ CRASH SAFEGUARDS:
     a boundary curve. That matters because the two are treated differently
     when a delete is refused: a leftover symbolic line is harmless, a
     leftover boundary curve means an open profile and cancels the split.
+  - A SYMBOLIC LINE THE EDIT SCOPE REFUSES IS RETRIED AFTER THE COMMIT, then
+    reported. "EditModeMgr element modifiable checker" is the sketch edit mode
+    rejecting the element, so it is worth asking again once that mode is gone.
+    A line that survives both attempts is refused on every copy and therefore
+    lands on every resulting opening - it cannot open a boundary profile, but
+    it is not harmless either, so the summary names it instead of leaving the
+    user to find it.
   - A CURVE THAT SITS IN NO REGION IS ATTACHED TO THE NEAREST ONE. Leaving it
     unclaimed sounds harmless but means every copy keeps it, so one stray line
     in the source shaft comes back duplicated onto all N resulting openings.
@@ -709,6 +716,14 @@ def _describe_element(eid):
         bits.append("pinned=" + str(e.Pinned))
     except:
         pass
+    # Which work plane the curve sits on. A curve that the sketch reports as
+    # its dependent but that lives on a DIFFERENT plane is not part of the
+    # sketch being edited, which is exactly what "EditModeMgr element
+    # modifiable checker" means - so record it and let the next log say so.
+    try:
+        bits.append("plane=" + str(_eid_int(e.SketchPlane.Id)))
+    except:
+        pass
     return " / ".join(bits) if bits else "?"
 
 
@@ -722,22 +737,66 @@ def _delete_curves(ids):
     still-present sketch owns a curve, and Revit then refuses it with "Illegal
     attempt to delete element. Reason: EditModeMgr element modifiable
     checker". That refusal is what has been failing large shafts: one curve
-    out of ~96 gets stuck, and a stuck curve fails the whole opening."""
-    batch = List[ElementId]()
-    for did in ids:
-        batch.Add(did)
-    try:
-        doc.Delete(batch)
-        return
-    except Exception as ex:
-        _log("    set delete of {} curve(s) rejected ({}) - falling back to "
-             "one at a time".format(len(ids), ex))
+    out of ~96 gets stuck, and a stuck curve fails the whole opening.
+
+    A set containing an undeletable curve is rejected WHOLE, so the fallback
+    is what actually does the work whenever such a curve is present. Sets of
+    one are skipped: there is nothing for Revit to resolve together."""
+    if len(ids) > 1:
+        batch = List[ElementId]()
+        for did in ids:
+            batch.Add(did)
+        try:
+            doc.Delete(batch)
+            return
+        except Exception as ex:
+            _log("    set delete of {} curve(s) rejected ({}) - falling back "
+                 "to one at a time".format(len(ids), ex))
     for did in ids:
         try:
             doc.Delete(did)
         except Exception as ex:
             _log("    delete failed for {} [{}]: {}".format(
                 _eid_int(did), _describe_element(did), ex))
+
+
+# Symbolic lines Revit would not let go of, gathered across the whole run so
+# the summary can name them. Reset at the start of every run.
+LEFTOVER_SYMBOLIC = []
+
+
+def _retry_delete_outside_scope(oid, ids):
+    """Last try at the curves Revit refused INSIDE the sketch edit scope.
+
+    "EditModeMgr element modifiable checker" is the sketch edit mode rejecting
+    the element, not the element refusing to die - so it costs nothing to ask
+    again once the scope has committed and that mode is gone. Whatever still
+    survives is recorded for the summary: these are symbolic lines, so they
+    cannot open a boundary profile, but they DO end up on every resulting
+    opening, and the user should be told rather than left to find them."""
+    still = []
+    t = Transaction(doc, "DQT - Remove leftover symbolic lines")
+    t.Start()
+    _set_silent_failures(t)
+    try:
+        for eid in ids:
+            try:
+                doc.Delete(eid)
+                _log("reduce {}: leftover {} deleted once the edit scope "
+                     "closed".format(oid, _eid_int(eid)))
+            except Exception as ex:
+                still.append(eid)
+                _log("reduce {}: leftover {} survives outside the scope too "
+                     "[{}]: {}".format(
+                         oid, _eid_int(eid), _describe_element(eid), ex))
+        t.Commit()
+    except Exception as ex:
+        if t.HasStarted() and not t.HasEnded():
+            t.RollBack()
+        _log("reduce {}: leftover cleanup transaction failed: {}".format(
+            oid, ex))
+        return list(ids)
+    return still
 
 
 def _stragglers(opening, sketch, keep_set, polys):
@@ -906,6 +965,7 @@ def reduce_opening_to_region(opening, keep_set, polys):
     # gone. Otherwise cancel the scope - never commit a broken sketch.
     counts_after = _count_boundary_elements(opening, sketch, polys)
     bad = None
+    refused_symbolic = []
     for j in keep_set:
         if counts_after.get(j, 0) < expected.get(j, 0):
             bad = "kept loop {} lost boundary curves ({} of {} left)".format(
@@ -939,11 +999,15 @@ def reduce_opening_to_region(opening, keep_set, polys):
             bad = "{} boundary curve(s) from removed loops could not be " \
                   "deleted".format(len(true_bnd))
         elif sym_left:
-            # Symbolic lines inside removed regions do not affect boundary
-            # profiles - log them but allow the commit to proceed.
+            # Symbolic lines inside removed regions cannot open a boundary
+            # profile, so the commit may proceed - but they are NOT harmless:
+            # a line the edit scope refuses is refused on every copy, so it
+            # ends up on every resulting opening. Try again once the scope has
+            # closed, and remember whatever still survives.
+            refused_symbolic = [t[0] for t in sym_left]
             _log("reduce {}: {} symbolic line(s) from removed regions could "
-                 "not be deleted (harmless, proceeding with commit)".format(
-                     oid, len(sym_left)))
+                 "not be deleted in the edit scope - will retry after the "
+                 "commit".format(oid, len(sym_left)))
     if bad is not None:
         try:
             ses.Cancel()
@@ -962,6 +1026,10 @@ def reduce_opening_to_region(opening, keep_set, polys):
             pass
         raise
     _log("reduce {}: SketchEditScope.Commit OK".format(oid))
+    if refused_symbolic:
+        still = _retry_delete_outside_scope(oid, refused_symbolic)
+        for eid in still:
+            LEFTOVER_SYMBOLIC.append((oid, _eid_int(eid)))
     return kept_symbolic
 
 
@@ -1205,6 +1273,8 @@ def main():
         _log("RUN start - {} opening(s) selected - doc: {}".format(
             len(selected_ids), getattr(doc, "Title", "?")))
 
+        del LEFTOVER_SYMBOLIC[:]
+
         total_result = 0
         total_symbolic = 0
         successful = 0
@@ -1278,6 +1348,11 @@ def main():
         if batch_ids:
             print("Grouped, need 2nd pass   : {} opening(s) -> IDs {}".format(
                 len(batch_ids), ", ".join(str(i) for i in batch_ids)))
+        if LEFTOVER_SYMBOLIC:
+            print("Undeletable symbolic     : {} line(s) Revit refused".format(
+                len(LEFTOVER_SYMBOLIC)))
+            for (owner, eid) in LEFTOVER_SYMBOLIC:
+                print("    opening {} keeps line {}".format(owner, eid))
         print("=" * 60)
 
         msg = (
@@ -1300,6 +1375,19 @@ def main():
                 "together.\nSelect them and run Split Shaft again to finish "
                 "(pass 2)."
             ).format(MAX_BOUNDARIES_PER_SPLIT, len(batch_ids))
+        if LEFTOVER_SYMBOLIC:
+            msg += (
+                "\n\nLEFTOVER LINES: Revit refused to delete {} symbolic "
+                "line(s) belonging to regions that were split off, both "
+                "inside the sketch edit scope and after it closed. They are "
+                "not part of any boundary, so the openings are valid, but "
+                "each resulting opening carries a copy of them - that is the "
+                "stray line you can see outside an opening.\n"
+                "To get rid of them: undo this split, open the ORIGINAL "
+                "shaft's sketch, delete those lines by hand, then run Split "
+                "again. Their element IDs are in the console output and the "
+                "log."
+            ).format(len(LEFTOVER_SYMBOLIC))
         if batch_ids or deferred:
             msg += ("\n\nIMPORTANT: SAVE the model (and ideally close and "
                     "reopen it) before the next pass. Sketch edits from this "
