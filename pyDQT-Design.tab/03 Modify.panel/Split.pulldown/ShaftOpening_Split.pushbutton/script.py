@@ -308,7 +308,8 @@ def get_sketch_curve_elements(opening, sketch):
         mid = _curve_midpoint(c)
         if mid is None:
             continue
-        found[_eid_int(e.Id)] = (e, mid)
+        eps = _curve_endpoints(c)
+        found[_eid_int(e.Id)] = (e, mid, eps)
     return list(found.values())
 
 
@@ -323,6 +324,21 @@ def _curve_midpoint(curve):
             return None
     try:
         return (p.X, p.Y)
+    except:
+        return None
+
+
+def _curve_endpoints(curve):
+    """Both endpoints of a curve as ((x0,y0), (x1,y1)), read immediately.
+
+    Endpoint matching is more reliable than midpoint matching for boundary
+    detection: endpoints are exact polygon vertices (shared between adjacent
+    curves in a loop), whereas the midpoint of an arc can land far from the
+    chord-based polygon approximation and miss the tolerance."""
+    try:
+        p0 = curve.GetEndPoint(0)
+        p1 = curve.GetEndPoint(1)
+        return ((p0.X, p0.Y), (p1.X, p1.Y))
     except:
         return None
 
@@ -444,9 +460,19 @@ def analyze_loops(polys):
     return main_indices, holes_of
 
 
-def loops_at(xy, polys):
+def loops_at(xy, polys, endpoints=None):
     """(on, inside): EVERY loop whose outline the point lies on, and every
     loop that strictly contains it.
+
+    When endpoints are provided, boundary detection uses BOTH endpoints of
+    the curve: if both endpoints lie on a polygon's boundary, the curve is
+    classified as a boundary curve of that loop.  This is far more reliable
+    than midpoint matching because endpoints are exact polygon vertices
+    (shared between adjacent curves in a loop), whereas the midpoint of an
+    arc sits between the chord-based polygon segments and can miss the
+    tolerance entirely.  Midpoint matching is still used as a fallback for
+    any curve where endpoint matching finds nothing (e.g. symbolic lines
+    whose endpoints are inside a loop, not on its boundary).
 
     Both lists matter because loops in one shaft can touch or share an edge.
     A curve on a shared edge belongs to two loops at once - attributing it to
@@ -457,6 +483,17 @@ def loops_at(xy, polys):
         return [], []
     on = []
     inside = []
+
+    # Primary: endpoint-based boundary detection (exact for all curve types)
+    if endpoints is not None:
+        ep0, ep1 = endpoints
+        for j, poly in enumerate(polys):
+            if point_on_poly(ep0, poly) and point_on_poly(ep1, poly):
+                on.append(j)
+        if on:
+            return on, []
+
+    # Fallback: midpoint matching (for symbolic lines, or if no endpoints)
     for j, poly in enumerate(polys):
         if point_on_poly(xy, poly):
             on.append(j)
@@ -571,8 +608,8 @@ def _stragglers(opening, sketch, keep_set, polys):
     not affect boundary validity."""
     boundary = []
     symbolic = []
-    for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        on, inside = loops_at(xy, polys)
+    for (e, xy, eps) in get_sketch_curve_elements(opening, sketch):
+        on, inside = loops_at(xy, polys, eps)
         if _is_removable(on, inside, keep_set):
             if on:
                 boundary.append((e.Id, xy))
@@ -585,8 +622,8 @@ def _count_boundary_elements(opening, sketch, polys):
     """Count boundary curve ELEMENTS currently present in the sketch, per
     loop index. A curve on a shared edge counts for every loop it lies on."""
     counts = {}
-    for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        on, _inside = loops_at(xy, polys)
+    for (e, xy, eps) in get_sketch_curve_elements(opening, sketch):
+        on, _inside = loops_at(xy, polys, eps)
         for j in on:
             counts[j] = counts.get(j, 0) + 1
     return counts
@@ -622,8 +659,8 @@ def reduce_opening_to_region(opening, keep_set, polys):
     found_boundary = {}
     shared = 0
     unmatched = 0
-    for (e, xy) in curve_elements:
-        on, inside = loops_at(xy, polys)
+    for (e, xy, eps) in curve_elements:
+        on, inside = loops_at(xy, polys, eps)
         for j in on:
             found_boundary[j] = found_boundary.get(j, 0) + 1
         if _is_removable(on, inside, keep_set):
