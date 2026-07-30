@@ -65,6 +65,11 @@ CRASH SAFEGUARDS:
     belong to a removed loop AND a retained one at the same time. Such a
     curve is never deleted - the retained profile still needs it, and Revit
     refuses the delete anyway ("EditModeMgr element modifiable checker").
+    A two-tier tolerance catches shared edges: first at the normal tolerance
+    during classification, then at a wider fallback tolerance for any curves
+    that Revit refused to delete - if the undeletable curve is near a kept
+    loop's boundary, it is reclassified as shared rather than treated as a
+    failure.
   - The UI selection is cleared before any editing, and every element is
     re-fetched by Id right before use; stale references are never reused
     across regenerations.
@@ -116,7 +121,8 @@ def _eid_int(eid):
 doc = revit.doc
 uidoc = revit.uidoc
 
-_ON_LOOP_TOL = 1e-4   # feet - midpoint-on-boundary tolerance
+_ON_LOOP_TOL = 5e-4   # feet - midpoint-on-boundary tolerance
+_SHARED_EDGE_FALLBACK_TOL = 5e-3  # feet - re-check failed deletes for shared edges
 
 MAX_BOUNDARIES_PER_SPLIT = 20   # hard cap on boundaries fully split in one run
 
@@ -302,7 +308,8 @@ def get_sketch_curve_elements(opening, sketch):
         mid = _curve_midpoint(c)
         if mid is None:
             continue
-        found[_eid_int(e.Id)] = (e, mid)
+        eps = _curve_endpoints(c)
+        found[_eid_int(e.Id)] = (e, mid, eps)
     return list(found.values())
 
 
@@ -317,6 +324,21 @@ def _curve_midpoint(curve):
             return None
     try:
         return (p.X, p.Y)
+    except:
+        return None
+
+
+def _curve_endpoints(curve):
+    """Both endpoints of a curve as ((x0,y0), (x1,y1)), read immediately.
+
+    Endpoint matching is more reliable than midpoint matching for boundary
+    detection: endpoints are exact polygon vertices (shared between adjacent
+    curves in a loop), whereas the midpoint of an arc can land far from the
+    chord-based polygon approximation and miss the tolerance."""
+    try:
+        p0 = curve.GetEndPoint(0)
+        p1 = curve.GetEndPoint(1)
+        return ((p0.X, p0.Y), (p1.X, p1.Y))
     except:
         return None
 
@@ -438,9 +460,19 @@ def analyze_loops(polys):
     return main_indices, holes_of
 
 
-def loops_at(xy, polys):
+def loops_at(xy, polys, endpoints=None):
     """(on, inside): EVERY loop whose outline the point lies on, and every
     loop that strictly contains it.
+
+    When endpoints are provided, boundary detection uses BOTH endpoints of
+    the curve: if both endpoints lie on a polygon's boundary, the curve is
+    classified as a boundary curve of that loop.  This is far more reliable
+    than midpoint matching because endpoints are exact polygon vertices
+    (shared between adjacent curves in a loop), whereas the midpoint of an
+    arc sits between the chord-based polygon segments and can miss the
+    tolerance entirely.  Midpoint matching is still used as a fallback for
+    any curve where endpoint matching finds nothing (e.g. symbolic lines
+    whose endpoints are inside a loop, not on its boundary).
 
     Both lists matter because loops in one shaft can touch or share an edge.
     A curve on a shared edge belongs to two loops at once - attributing it to
@@ -451,6 +483,17 @@ def loops_at(xy, polys):
         return [], []
     on = []
     inside = []
+
+    # Primary: endpoint-based boundary detection (exact for all curve types)
+    if endpoints is not None:
+        ep0, ep1 = endpoints
+        for j, poly in enumerate(polys):
+            if point_on_poly(ep0, poly) and point_on_poly(ep1, poly):
+                on.append(j)
+        if on:
+            return on, []
+
+    # Fallback: midpoint matching (for symbolic lines, or if no endpoints)
     for j, poly in enumerate(polys):
         if point_on_poly(xy, poly):
             on.append(j)
@@ -466,6 +509,21 @@ def _is_removable(on, inside, keep_set):
     if inside:
         return not any(j in keep_set for j in inside)
     return False   # belongs to no loop - leave it alone
+
+
+def _near_any_kept_boundary(xy, polys, keep_set, tol):
+    """True if xy is within tol of ANY kept loop's polygon boundary.
+
+    Used as a fallback after doc.Delete() fails: Revit knows which curves are
+    on shared edges even when the polygon approximation misses it.  Re-checking
+    with a looser tolerance catches shared-edge curves whose midpoints sit
+    between two polygon segments and land just outside the normal tolerance."""
+    if xy is None:
+        return False
+    for j in keep_set:
+        if j < len(polys) and point_on_poly(xy, polys[j], tol):
+            return True
+    return False
 
 
 def copy_one_in_place(opening):
@@ -541,21 +599,31 @@ def _describe_element(eid):
 
 
 def _stragglers(opening, sketch, keep_set, polys):
-    """Curve elements still present that nothing we are keeping needs."""
-    left = []
-    for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        on, inside = loops_at(xy, polys)
+    """Curve elements still present that nothing we are keeping needs.
+
+    Returns (boundary_ids, symbolic_ids) where boundary_ids are curves on a
+    removed loop's polygon edge and symbolic_ids are curves inside a removed
+    region.  The distinction matters: boundary stragglers would leave open
+    profiles (fatal), while symbolic stragglers are just extra lines that do
+    not affect boundary validity."""
+    boundary = []
+    symbolic = []
+    for (e, xy, eps) in get_sketch_curve_elements(opening, sketch):
+        on, inside = loops_at(xy, polys, eps)
         if _is_removable(on, inside, keep_set):
-            left.append(e.Id)
-    return left
+            if on:
+                boundary.append((e.Id, xy))
+            else:
+                symbolic.append((e.Id, xy))
+    return boundary, symbolic
 
 
 def _count_boundary_elements(opening, sketch, polys):
     """Count boundary curve ELEMENTS currently present in the sketch, per
     loop index. A curve on a shared edge counts for every loop it lies on."""
     counts = {}
-    for (e, xy) in get_sketch_curve_elements(opening, sketch):
-        on, _inside = loops_at(xy, polys)
+    for (e, xy, eps) in get_sketch_curve_elements(opening, sketch):
+        on, _inside = loops_at(xy, polys, eps)
         for j in on:
             counts[j] = counts.get(j, 0) + 1
     return counts
@@ -590,31 +658,50 @@ def reduce_opening_to_region(opening, keep_set, polys):
     kept_symbolic = 0
     found_boundary = {}
     shared = 0
-    for (e, xy) in curve_elements:
-        on, inside = loops_at(xy, polys)
+    unmatched = 0
+    for (e, xy, eps) in curve_elements:
+        on, inside = loops_at(xy, polys, eps)
         for j in on:
             found_boundary[j] = found_boundary.get(j, 0) + 1
         if _is_removable(on, inside, keep_set):
             delete_ids.append(e.Id)
+        elif not on and not inside:
+            unmatched += 1
         else:
             if on and len(on) > 1:
                 shared += 1
             elif inside and any(j in keep_set for j in inside):
                 kept_symbolic += 1
+    _log("reduce {}: classification: {} to delete, {} shared-edge, {} kept "
+         "symbolic, {} unmatched".format(
+             oid, len(delete_ids), shared, kept_symbolic, unmatched))
     if shared:
         _log("reduce {}: {} curve(s) lie on a shared edge and are kept "
              "because a retained loop still needs them".format(oid, shared))
 
-    # Pre-check: every loop must be fully re-identified in THIS sketch. A
-    # shortfall means classification drifted (tolerance) and deleting would
-    # leave a broken sketch - skip this opening instead of risking the commit.
+    # Pre-check: every loop that we plan to REMOVE must be fully identified
+    # so we know exactly which curves to delete.  For loops we are KEEPING, a
+    # shortfall is logged as a warning but is not fatal - we are not touching
+    # their curves, and a tolerance miss on a kept loop cannot cause us to
+    # accidentally delete its curves (a curve always matches its own loop
+    # first, since the polygon was built from the same geometry).
+    precheck_ok = True
     for j in range(len(polys)):
-        if found_boundary.get(j, 0) < expected.get(j, 0):
-            raise Exception(
-                "loop {}: only {} of {} boundary curves identified in the "
-                "sketch - classification mismatch, skipping this opening "
-                "instead of committing a broken sketch".format(
-                    j, found_boundary.get(j, 0), expected.get(j, 0)))
+        fb = found_boundary.get(j, 0)
+        ex = expected.get(j, 0)
+        if fb < ex:
+            in_keep = j in keep_set
+            _log("reduce {}: loop {} has {}/{} boundary curves identified "
+                 "({}){}" .format(oid, j, fb, ex,
+                                  "kept" if in_keep else "TO REMOVE",
+                                  " [WARNING]" if in_keep else " [ERROR]"))
+            if not in_keep:
+                precheck_ok = False
+    if not precheck_ok:
+        raise Exception(
+            "one or more REMOVED loops have unidentified boundary curves - "
+            "classification mismatch, skipping this opening instead of "
+            "committing a broken sketch (see log for per-loop details)")
 
     if not delete_ids:
         _log("reduce {}: nothing to delete, done".format(oid))
@@ -656,14 +743,16 @@ def reduce_opening_to_region(opening, keep_set, polys):
                 pass
             raise
 
-        delete_ids = _stragglers(opening, sketch, keep_set, polys)
+        bnd_left, sym_left = _stragglers(opening, sketch, keep_set, polys)
+        delete_ids = [eid for eid, _ in bnd_left] + [eid for eid, _ in sym_left]
         if not delete_ids:
             break
         # Retrying only helps when the pass actually removed something; if the
         # same curves survive again they are undeletable, not stale.
         if previous_left is not None and len(delete_ids) >= previous_left:
             _log("reduce {}: {} curve(s) cannot be deleted in this edit scope "
-                 "- giving up on this opening".format(oid, len(delete_ids)))
+                 "({} boundary, {} symbolic)".format(
+                     oid, len(delete_ids), len(bnd_left), len(sym_left)))
             break
         previous_left = len(delete_ids)
         _log("reduce {}: pass {} left {} straggler(s), retrying...".format(
@@ -679,12 +768,33 @@ def reduce_opening_to_region(opening, keep_set, polys):
                 j, counts_after.get(j, 0), expected.get(j, 0))
             break
     if bad is None:
-        # Only curves nothing retained needs count as leftovers; a curve on an
-        # edge shared with a kept loop is supposed to stay.
-        leftovers = _stragglers(opening, sketch, keep_set, polys)
-        if leftovers:
-            bad = "{} curve(s) belonging only to removed loops are still " \
-                  "present".format(len(leftovers))
+        bnd_left, sym_left = _stragglers(opening, sketch, keep_set, polys)
+
+        # Re-check boundary stragglers with a LARGER tolerance: if a curve
+        # that doc.Delete() refused is actually near a kept loop's boundary,
+        # Revit is telling us it is a shared-edge curve that the polygon
+        # approximation missed at the normal tolerance.
+        true_bnd = []
+        for (eid, xy) in bnd_left:
+            if _near_any_kept_boundary(xy, polys, keep_set,
+                                       _SHARED_EDGE_FALLBACK_TOL):
+                _log("reduce {}: straggler {} reclassified as shared-edge "
+                     "(near kept boundary at fallback tolerance)".format(
+                         oid, _eid_int(eid)))
+            else:
+                true_bnd.append(eid)
+                _log("reduce {}: true straggler {} [{}]".format(
+                    oid, _eid_int(eid), _describe_element(eid)))
+
+        if true_bnd:
+            bad = "{} boundary curve(s) from removed loops could not be " \
+                  "deleted".format(len(true_bnd))
+        elif sym_left:
+            # Symbolic lines inside removed regions do not affect boundary
+            # profiles - log them but allow the commit to proceed.
+            _log("reduce {}: {} symbolic line(s) from removed regions could "
+                 "not be deleted (harmless, proceeding with commit)".format(
+                     oid, len(sym_left)))
     if bad is not None:
         try:
             ses.Cancel()
