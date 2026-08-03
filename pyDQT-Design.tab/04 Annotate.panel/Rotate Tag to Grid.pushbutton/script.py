@@ -95,11 +95,11 @@ def natural_sort_key(name):
         return (1, 0.0, name.lower())
 
 
-def get_straight_grids(doc):
-    """Grids whose centerline is a straight Line, sorted by name. Curved
-    (arc) grids are excluded - they have no single direction to hand a tag."""
+def _straight_only(grids):
+    """Keep grids whose centerline is a straight Line - a curved (arc) grid
+    has no single direction to hand a tag."""
     items = []
-    for g in FilteredElementCollector(doc).OfClass(Grid):
+    for g in grids:
         try:
             curve = g.Curve
         except:
@@ -107,7 +107,38 @@ def get_straight_grids(doc):
         if not isinstance(curve, Line):
             continue
         items.append(g)
-    return sorted(items, key=lambda g: natural_sort_key(g.Name))
+    return items
+
+
+def get_straight_grids(doc, view):
+    """Straight grids VISIBLE IN `view`, from this model only, sorted by name.
+
+    Collecting through the view rather than the whole document matters: a
+    real project usually carries extra grids the drawing never shows -
+    other design options, other building blocks, stray copies pasted in
+    from a consultant's model - and those routinely reuse names. A
+    document-wide list therefore shows the same name many times over, and
+    picking "D" out of it can hand back a different "D" pointing another
+    way, which is exactly how a tag ends up rotated but not parallel to
+    the grid that was chosen.
+
+    Linked grids are never included either way: they live in the link's
+    own document, which this collector does not reach.
+    """
+    grids = []
+    try:
+        grids = _straight_only(
+            FilteredElementCollector(doc, view.Id).OfClass(Grid))
+    except:
+        grids = []
+    if not grids:
+        # This view draws no grids at all - fall back to the whole model so
+        # the tool still works instead of showing an empty dropdown.
+        try:
+            grids = _straight_only(FilteredElementCollector(doc).OfClass(Grid))
+        except:
+            grids = []
+    return sorted(grids, key=lambda g: natural_sort_key(g.Name))
 
 
 def direction_to_angle(dx, dy):
@@ -134,6 +165,32 @@ def grid_view_angle(grid, view):
     return direction_to_angle(dx, dy)
 
 
+def grid_entries(doc, view):
+    """[(grid, angle, label)] for the dropdown, one row per distinct
+    direction a name can mean.
+
+    Every row is labelled with the angle it will apply, so a name that
+    genuinely appears twice at different angles stays distinguishable
+    instead of looking like a duplicate. Rows that agree on both name and
+    angle are collapsed - they would rotate a tag identically, so showing
+    them twice is only noise."""
+    entries = []
+    seen = set()
+    for g in get_straight_grids(doc, view):
+        try:
+            angle = grid_view_angle(g, view)
+        except:
+            continue
+        degrees = math.degrees(angle)
+        key = (g.Name, round(degrees, 1))
+        if key in seen:
+            continue
+        seen.add(key)
+        label = u"{}   ({:.1f}°)".format(g.Name, degrees)
+        entries.append((g, angle, label))
+    return entries
+
+
 def normalize_upright(angle):
     """Fold an angle (radians) into (-pi/2, pi/2] so tag text reads
     left-to-right instead of upside-down. A grid's direction is only known
@@ -148,15 +205,18 @@ def normalize_upright(angle):
 
 def to_tag_rotation_angle(math_angle):
     """Convert a standard math angle (radians, counter-clockwise-positive
-    from +X - what direction_to_angle()/grid_view_angle() return) into the
-    value IndependentTag.RotationAngle expects.
+    from the view's right direction - what grid_view_angle() returns) into
+    the value IndependentTag.RotationAngle expects.
 
-    Confirmed by live testing: assigning the raw CCW-positive angle
-    rotated tags away from, not onto, the target grid direction.
-    IndependentTag.RotationAngle evidently increases CLOCKWISE, the
-    opposite of the right-hand-rule convention geometric rotation APIs
-    (e.g. ElementTransformUtils.RotateElement) use elsewhere in Revit."""
-    return -math_angle
+    Both use the same convention, so this is a pass-through. It stays a
+    named function because it is the one place to adjust if that ever
+    proves wrong: an earlier build negated here, on the theory that the
+    property ran clockwise, after a tag came out not parallel to its grid.
+    That was a misdiagnosis - the tag was being rotated to a DIFFERENT,
+    same-named grid pulled from elsewhere in the model (see
+    get_straight_grids), so the angle being applied was never the chosen
+    grid's to begin with. The negation is gone."""
+    return math_angle
 
 
 def rotate_tag_to_angle(doc, tag, angle):
@@ -175,15 +235,15 @@ def rotate_tag_to_angle(doc, tag, angle):
 
 # ─── WPF UI ─────────────────────────────────────────────────
 class RotateTagWindow(Window):
-    def __init__(self, grids, tag_count):
+    def __init__(self, entries, tag_count):
         self.Title = "Rotate Tag to Grid"
-        self.Width = 380
-        self.Height = 330
+        self.Width = 400
+        self.Height = 350
         self.WindowStartupLocation = WindowStartupLocation.CenterScreen
         self.ResizeMode = System.Windows.ResizeMode.NoResize
         self.Background = B(DQT_BG)
         self.result = None
-        self.grids = grids
+        self.entries = entries
         self.tag_count = tag_count
         self._build_ui()
 
@@ -245,9 +305,9 @@ class RotateTagWindow(Window):
         self.combo = ComboBox()
         self.combo.Margin = Thickness(0, 4, 0, 10)
         self.combo.Height = 28
-        for g in self.grids:
+        for _grid, _angle, label in self.entries:
             item = ComboBoxItem()
-            item.Content = g.Name
+            item.Content = label
             self.combo.Items.Add(item)
         if self.combo.Items.Count > 0:
             self.combo.SelectedIndex = 0
@@ -269,8 +329,9 @@ class RotateTagWindow(Window):
         hint_border.Padding = Thickness(10, 8, 10, 8)
         hint_border.Margin = Thickness(0, 0, 0, 10)
         hint_border.Child = self._text(
-            "Only straight grids are listed. Tags switch to 'Rotate with "
-            "component' orientation to allow free rotation.",
+            "Only straight grids drawn in the current view are listed - "
+            "each with the angle it will apply. Tags switch to 'Rotate "
+            "with component' orientation to allow free rotation.",
             10.5, color=DQT_DARK)
         body.Children.Add(hint_border)
 
@@ -327,22 +388,19 @@ def run():
     if not tags:
         return
 
-    grids = get_straight_grids(doc)
-    if not grids:
+    entries = grid_entries(doc, active_view)
+    if not entries:
         TaskDialog.Show("Rotate Tag to Grid",
                          "No straight grids found in this project.")
         return
 
-    window = RotateTagWindow(grids, len(tags))
+    window = RotateTagWindow(entries, len(tags))
     window.ShowDialog()
     if window.result is None:
         return
 
-    grid = grids[window.result["grid_index"]]
-    keep_upright = window.result["keep_upright"]
-
-    angle = grid_view_angle(grid, active_view)
-    if keep_upright:
+    grid, angle, _label = entries[window.result["grid_index"]]
+    if window.result["keep_upright"]:
         angle = normalize_upright(angle)
 
     ok = 0
@@ -363,7 +421,8 @@ def run():
         TaskDialog.Show("Rotate Tag to Grid", "Error: {}".format(str(e)))
         return
 
-    msg = "Rotated {} of {} tag(s) to match '{}'.".format(ok, len(tags), grid.Name)
+    msg = u"Rotated {} of {} tag(s) to match '{}' ({:.1f}°).".format(
+        ok, len(tags), grid.Name, math.degrees(angle))
     if failed:
         lines = ["  ID {} - {}".format(_eid_int(tg.Id), err) for tg, err in failed[:10]]
         more = "" if len(failed) <= 10 else "\n  ... and {} more".format(len(failed) - 10)
