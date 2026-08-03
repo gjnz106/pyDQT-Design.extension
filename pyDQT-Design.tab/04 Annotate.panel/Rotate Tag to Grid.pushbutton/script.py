@@ -146,14 +146,28 @@ def normalize_upright(angle):
     return angle
 
 
+def to_tag_rotation_angle(math_angle):
+    """Convert a standard math angle (radians, counter-clockwise-positive
+    from +X - what direction_to_angle()/grid_view_angle() return) into the
+    value IndependentTag.RotationAngle expects.
+
+    Confirmed by live testing: assigning the raw CCW-positive angle
+    rotated tags away from, not onto, the target grid direction.
+    IndependentTag.RotationAngle evidently increases CLOCKWISE, the
+    opposite of the right-hand-rule convention geometric rotation APIs
+    (e.g. ElementTransformUtils.RotateElement) use elsewhere in Revit."""
+    return -math_angle
+
+
 def rotate_tag_to_angle(doc, tag, angle):
-    """Rotate one IndependentTag to an absolute angle (radians), switching
-    it to free-rotation orientation first if needed. Returns (ok, error)."""
+    """Rotate one IndependentTag so it reads at `angle` (radians,
+    CCW-positive from +X - ordinary math convention), switching it to
+    free-rotation orientation first if needed. Returns (ok, error)."""
     try:
         if tag.TagOrientation != TagOrientation.AnyModelDirection:
             tag.TagOrientation = TagOrientation.AnyModelDirection
             doc.Regenerate()
-        tag.RotationAngle = angle
+        tag.RotationAngle = to_tag_rotation_angle(angle)
         return True, None
     except Exception as ex:
         return False, str(ex)
