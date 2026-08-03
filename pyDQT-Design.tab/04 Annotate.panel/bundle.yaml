@@ -2,5 +2,6 @@ title: Annotate
 layout:
   - Dimension
   - Tag Checker
+  - Rotate Tag to Grid
   - Copy Annotation
   - Renumber by spline
