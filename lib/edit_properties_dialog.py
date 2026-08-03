@@ -321,10 +321,10 @@ class EditPropertiesDialog(Window):
                         control.IsChecked = bool(current_value)
             except Exception as ex:
                 print("Error loading value for {}: {}".format(prop_name, str(ex)))
-def get_control_value(self, control, prop_config):
+    def get_control_value(self, control, prop_config):
         """Get value from control"""
         prop_type = prop_config.get('type', PropertyType.TEXTBOX)
-        
+
         if isinstance(control, TextBox):
             return control.Text
         elif isinstance(control, ComboBox):
@@ -333,7 +333,7 @@ def get_control_value(self, control, prop_config):
             return None
         elif isinstance(control, CheckBox):
             return control.IsChecked == True
-        
+
         return None
     
     def validate_values(self):
