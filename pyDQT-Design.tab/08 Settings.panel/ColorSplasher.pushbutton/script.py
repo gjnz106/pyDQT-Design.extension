@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Color Splasher v4.0 - DQT
+Color Splasher v4.1 - DQT
 Auto-color elements in active view based on parameter values.
-Features: Gradient/Random colors, Create Legend, Create View Filters, Reset.
+Features: Gradient/Random colors, pick your own colour per value,
+save/load a colour scheme to reuse in another model, Create Legend,
+Create View Filters, Reset.
 
 Copyright (c) 2026 by Dang Quoc Truong (DQT)
 All rights reserved.
@@ -16,14 +18,19 @@ from pyrevit import revit, DB, forms, script
 from collections import OrderedDict
 import random
 import math
+import json
+import os
 
 import clr
 clr.AddReference('PresentationCore')
 clr.AddReference('PresentationFramework')
 clr.AddReference('WindowsBase')
 clr.AddReference('System')
+clr.AddReference('System.Windows.Forms')
+clr.AddReference('System.Drawing')
 
 import System
+import System.Drawing
 from System.Windows import (
     Window, Thickness, HorizontalAlignment, VerticalAlignment,
     GridLength, GridUnitType, WindowStartupLocation, TextTrimming
@@ -34,6 +41,21 @@ from System.Windows.Controls import (
     RowDefinition, ScrollBarVisibility, Orientation, SelectionMode
 )
 from System.Windows.Media import SolidColorBrush, Color
+from System.Windows.Input import Cursors
+from System.Windows.Forms import (
+    ColorDialog, SaveFileDialog, OpenFileDialog, DialogResult
+)
+
+# Version stamped into exported colour files, so a future format change can
+# be recognised instead of silently mis-read.
+SETTINGS_VERSION = 1
+
+# unicode() exists in IronPython 2.7 but not CPython3; shim for both engines
+# (same shim this suite's Ribbon Names tool already relies on)
+try:
+    _unicode = unicode  # noqa: F821  (IronPython 2)
+except NameError:
+    _unicode = str       # CPython 3
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -821,6 +843,103 @@ def generate_random(n):
 
 
 # =====================================================
+# COLOUR SETTINGS FILE (share a colour scheme between models)
+# =====================================================
+def build_settings_payload(category, param_name, sorted_values, color_map,
+                            model_title=""):
+    """The dict written to a .json colour file.
+
+    Colours are keyed by the parameter VALUE rather than by element id, which
+    is what makes the file portable: another model has entirely different
+    ids, but "Fire Rating = 60min" means the same thing in both."""
+    import time
+    colors = {}
+    for v in sorted_values:
+        rgb = color_map.get(v)
+        if rgb is None:
+            continue
+        r, g, b = rgb
+        colors[_unicode(v)] = [int(r), int(g), int(b)]
+    return {
+        "dqt_tool": "Color Splasher",
+        "version": SETTINGS_VERSION,
+        "saved_from_model": model_title,
+        "saved_on": time.strftime("%Y-%m-%d %H:%M"),
+        "category": category or "",
+        "parameter": param_name or "",
+        "colors": colors,
+    }
+
+
+def write_settings_file(path, payload):
+    """Write a colour file. ensure_ascii keeps the whole file plain ASCII, so
+    values carrying accents survive the round-trip without depending on the
+    machine's default codepage."""
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, sort_keys=True, ensure_ascii=True)
+
+
+def read_settings_file(path):
+    """Load a colour file. Returns (payload, error) - never raises, so a
+    hand-edited or unrelated .json reports a message instead of a stack."""
+    try:
+        with open(path, "r") as f:
+            payload = json.load(f)
+    except Exception as ex:
+        return None, "could not read the file: {}".format(ex)
+
+    if not isinstance(payload, dict):
+        return None, "this file does not hold Color Splasher settings"
+    if payload.get("dqt_tool") != "Color Splasher":
+        return None, "this file was not saved by Color Splasher"
+    version = payload.get("version")
+    if version != SETTINGS_VERSION:
+        return None, ("this file was saved by a different version of the tool "
+                      "(file says {}, this build reads {})".format(
+                          version, SETTINGS_VERSION))
+    if not isinstance(payload.get("colors"), dict):
+        return None, "the file carries no colour list"
+    return payload, None
+
+
+def colors_from_payload(payload):
+    """{value: (r, g, b)} from a loaded payload, skipping malformed rows
+    rather than letting one bad entry throw away the whole file."""
+    out = {}
+    for value, rgb in payload.get("colors", {}).items():
+        try:
+            r, g, b = rgb
+            out[value] = (
+                max(0, min(255, int(r))),
+                max(0, min(255, int(g))),
+                max(0, min(255, int(b))),
+            )
+        except Exception:
+            continue
+    return out
+
+
+def apply_saved_colors(saved_colors, sorted_values, color_map):
+    """Recolour the values this model actually has from a saved scheme.
+
+    Returns (matched, unmatched_values, unused_saved). A value the file does
+    not mention keeps the colour it already had - importing a partial scheme
+    should tint what it covers, not blank out the rest."""
+    matched = 0
+    unmatched = []
+    for v in sorted_values:
+        key = _unicode(v)
+        if key in saved_colors:
+            color_map[v] = saved_colors[key]
+            matched += 1
+        else:
+            unmatched.append(v)
+    present = set(_unicode(v) for v in sorted_values)
+    unused = [k for k in saved_colors.keys() if k not in present]
+    return matched, unmatched, unused
+
+
+# =====================================================
 # WPF WINDOW
 # =====================================================
 
@@ -859,6 +978,8 @@ class ColorSplasherWindow(Window):
         self.btnRandom.Click += self._ev_random
         self.btnLegend.Click += self._ev_legend
         self.btnFilters.Click += self._ev_filters
+        self.btnSaveColors.Click += self._ev_save_colors
+        self.btnLoadColors.Click += self._ev_load_colors
         self.btnClose.Click += self._ev_close
         
         if self.categories:
@@ -902,7 +1023,7 @@ class ColorSplasherWindow(Window):
         b1.FontWeight = System.Windows.FontWeights.Bold; b1.Foreground = SolidColorBrush(CLR_ACCENT)
         b1.HorizontalAlignment = HorizontalAlignment.Right
         badge.Children.Add(b1)
-        b2 = TextBlock(); b2.Text = "v4.0"; b2.FontSize = 9
+        b2 = TextBlock(); b2.Text = "v4.1"; b2.FontSize = 9
         b2.Foreground = SolidColorBrush(CLR_MUTED)
         b2.HorizontalAlignment = HorizontalAlignment.Right
         badge.Children.Add(b2)
@@ -972,7 +1093,8 @@ class ColorSplasherWindow(Window):
         self._make_row(rg, GridLength.Auto)
         self._make_row(rg, GridLength.Auto)
         self._make_row(rg, GridLength(1, GridUnitType.Star))
-        self._make_row(rg, GridLength.Auto)
+        self._make_row(rg, GridLength.Auto)   # colour-mode buttons
+        self._make_row(rg, GridLength.Auto)   # save / load colour scheme
         
         # Legend header
         lhg = WPFGrid()
@@ -1024,7 +1146,33 @@ class ColorSplasherWindow(Window):
         WPFGrid.SetColumn(self.btnFilters, 6); btn_panel.Children.Add(self.btnFilters)
         
         WPFGrid.SetRow(btn_panel, 3); rg.Children.Add(btn_panel)
-        
+
+        # Colour-scheme sharing row
+        share = WPFGrid(); share.Margin = Thickness(0, 6, 0, 0)
+        self._make_col(share, GridLength(1, GridUnitType.Star))
+        self._make_col(share, GridLength(6))
+        self._make_col(share, GridLength.Auto)
+        self._make_col(share, GridLength(6))
+        self._make_col(share, GridLength.Auto)
+
+        hint = TextBlock()
+        hint.Text = "Tip: click any value row above to pick its colour"
+        hint.FontSize = 10; hint.Foreground = SolidColorBrush(CLR_MUTED)
+        hint.VerticalAlignment = VerticalAlignment.Center
+        hint.TextTrimming = TextTrimming.CharacterEllipsis
+        WPFGrid.SetColumn(hint, 0); share.Children.Add(hint)
+
+        self.btnSaveColors = self._make_btn("Save Colors...", CLR_CARD, CLR_TEXT)
+        self.btnSaveColors.ToolTip = ("Save this colour scheme to a file you can "
+                                       "load in another model")
+        WPFGrid.SetColumn(self.btnSaveColors, 2); share.Children.Add(self.btnSaveColors)
+
+        self.btnLoadColors = self._make_btn("Load Colors...", CLR_CARD, CLR_TEXT)
+        self.btnLoadColors.ToolTip = "Load a colour scheme saved from another model"
+        WPFGrid.SetColumn(self.btnLoadColors, 4); share.Children.Add(self.btnLoadColors)
+
+        WPFGrid.SetRow(share, 4); rg.Children.Add(share)
+
         rb.Child = rg; ct.Children.Add(rb); main.Children.Add(ct)
         
         # === FOOTER (buttons row) ===
@@ -1079,7 +1227,7 @@ class ColorSplasherWindow(Window):
         self._make_col(fbg, GridLength(1, GridUnitType.Star))
         self._make_col(fbg, GridLength.Auto)
         
-        fbl = TextBlock(); fbl.Text = "Color Splasher v4.0 | Dang Quoc Truong (DQT)"
+        fbl = TextBlock(); fbl.Text = "Color Splasher v4.1 | Dang Quoc Truong (DQT)"
         fbl.FontSize = 9; fbl.Foreground = SolidColorBrush(CLR_MUTED)
         WPFGrid.SetColumn(fbl, 0); fbg.Children.Add(fbl)
         
@@ -1224,10 +1372,17 @@ class ColorSplasherWindow(Window):
             cnt = len(self.elements_by_value[val])
             r, g, b = self.color_map.get(val, (128, 128, 128))
             
-            # Full-width colored row (like pyRevit color splasher)
+            # Full-width colored row (like pyRevit color splasher).
+            # Tag carries the value so the click handler can recolour exactly
+            # this row without depending on its index - the legend is rebuilt
+            # from scratch on every change, so positions are not stable.
             row = Border(); row.Margin = Thickness(0, 0, 0, 1)
             row.Padding = Thickness(10, 6, 10, 6)
             row.Background = SolidColorBrush(Color.FromRgb(r, g, b))
+            row.Tag = val
+            row.Cursor = Cursors.Hand
+            row.ToolTip = "Click to choose a colour for this value"
+            row.MouseLeftButtonUp += self._ev_pick_color
             
             gr = WPFGrid()
             self._make_col(gr, GridLength(1, GridUnitType.Star))
@@ -1315,6 +1470,138 @@ class ColorSplasherWindow(Window):
         for i, v in enumerate(self.sorted_values):
             self.color_map[v] = colors[i]
         self._rebuild_legend()
+
+    def _ev_pick_color(self, s, a):
+        """Choose the colour for one value from the standard Windows picker.
+
+        The row's Tag holds the value, so this recolours the row that was
+        actually clicked even after sorting or a legend rebuild."""
+        if s is None or s.Tag is None:
+            return
+        val = s.Tag
+        r, g, b = self.color_map.get(val, (128, 128, 128))
+
+        dlg = ColorDialog()
+        dlg.FullOpen = True          # open on the custom-colour panel
+        dlg.AnyColor = True
+        try:
+            dlg.Color = System.Drawing.Color.FromArgb(int(r), int(g), int(b))
+        except Exception:
+            pass
+        # Seed the picker's custom slots with the scheme already in use, so
+        # matching an existing value's colour does not mean re-entering RGB.
+        try:
+            customs = []
+            for existing in self.sorted_values:
+                cr, cg, cb = self.color_map.get(existing, (128, 128, 128))
+                customs.append(int(cr) | (int(cg) << 8) | (int(cb) << 16))
+            if customs:
+                dlg.CustomColors = System.Array[System.Int32](customs[:16])
+        except Exception:
+            pass
+
+        if dlg.ShowDialog() != DialogResult.OK:
+            return
+
+        picked = dlg.Color
+        self.color_map[val] = (int(picked.R), int(picked.G), int(picked.B))
+        self._rebuild_legend()
+
+    def _ev_save_colors(self, s, a):
+        """Write the current scheme to a file another model can load."""
+        if not self.sorted_values or not self.color_map:
+            forms.alert("Pick a category and parameter first - there is no "
+                        "colour scheme to save yet.", title="Color Splasher")
+            return
+
+        sel = self.lbParams.SelectedItem
+        pname = str(sel) if sel else ""
+        cat = self._get_cat() or ""
+
+        dlg = SaveFileDialog()
+        dlg.Filter = "Color Splasher settings (*.json)|*.json"
+        dlg.DefaultExt = "json"
+        dlg.AddExtension = True
+        safe = "".join(ch if (ch.isalnum() or ch in " -_") else "_"
+                       for ch in "{}_{}".format(cat, pname)).strip()
+        dlg.FileName = "ColorSplasher_{}.json".format(safe or "scheme")
+        if dlg.ShowDialog() != DialogResult.OK:
+            return
+
+        try:
+            model_title = doc.Title
+        except Exception:
+            model_title = ""
+        payload = build_settings_payload(cat, pname, self.sorted_values,
+                                          self.color_map, model_title)
+        try:
+            write_settings_file(dlg.FileName, payload)
+        except Exception as ex:
+            forms.alert("Could not save the colour scheme:\n\n{}".format(ex),
+                        title="Color Splasher")
+            return
+
+        forms.alert("Saved {} colour(s) to:\n{}".format(
+            len(payload["colors"]), os.path.basename(dlg.FileName)),
+            title="Color Splasher")
+
+    def _ev_load_colors(self, s, a):
+        """Recolour the current values from a scheme saved elsewhere."""
+        if not self.sorted_values:
+            forms.alert("Pick a category and parameter first, then load a "
+                        "colour scheme onto its values.", title="Color Splasher")
+            return
+
+        dlg = OpenFileDialog()
+        dlg.Filter = "Color Splasher settings (*.json)|*.json"
+        dlg.CheckFileExists = True
+        if dlg.ShowDialog() != DialogResult.OK:
+            return
+
+        payload, err = read_settings_file(dlg.FileName)
+        if err:
+            forms.alert("Could not load this colour scheme - {}.".format(err),
+                        title="Color Splasher")
+            return
+
+        saved_colors = colors_from_payload(payload)
+        if not saved_colors:
+            forms.alert("That file holds no usable colours.",
+                        title="Color Splasher")
+            return
+
+        matched, unmatched, unused = apply_saved_colors(
+            saved_colors, self.sorted_values, self.color_map)
+        self._rebuild_legend()
+
+        if matched == 0:
+            # Worth calling out loudly: a scheme saved against a different
+            # parameter will match nothing, and silently changing no colours
+            # looks like the tool did nothing at all.
+            forms.alert(
+                "None of this model's values appear in that file, so no "
+                "colours changed.\n\nThe file was saved for '{}' on '{}'.\n"
+                "This view is showing '{}' on '{}'.".format(
+                    payload.get("parameter") or "?",
+                    payload.get("category") or "?",
+                    str(self.lbParams.SelectedItem or "?"),
+                    self._get_cat() or "?"),
+                title="Color Splasher")
+            return
+
+        msg = "Recoloured {} of {} value(s).".format(
+            matched, len(self.sorted_values))
+        if unmatched:
+            shown = ", ".join(str(v) for v in unmatched[:5])
+            more = "" if len(unmatched) <= 5 else " and {} more".format(
+                len(unmatched) - 5)
+            msg += ("\n\nKept the existing colour for {} value(s) the file "
+                    "does not mention:\n{}{}".format(len(unmatched), shown, more))
+        if unused:
+            msg += ("\n\n{} colour(s) in the file match no value in this "
+                    "model.".format(len(unused)))
+        msg += "\n\nClick Apply Colors to push this to the view."
+        forms.alert(msg, title="Color Splasher")
     
     def _ev_legend(self, s, a):
         """Create Legend view with TextNotes + FilledRegions (pyRevit approach)"""
