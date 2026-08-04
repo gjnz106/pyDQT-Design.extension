@@ -65,8 +65,19 @@ clr.AddReference('System')
 from Autodesk.Revit.DB import (
     Transaction, TransactionGroup, FilteredElementCollector,
     BuiltInCategory, BuiltInParameter, ElementId, ElementTransformUtils,
-    Grid, ViewSheet, ViewType, TemporaryViewMode, XYZ
+    Grid, ViewSheet, ViewType, XYZ
 )
+
+# TemporaryViewMode is only needed to switch the temporary hide/isolate mode
+# back off. Import it separately and defensively: pulling it in with the
+# block above meant that if a Revit release ever moved or dropped it, the
+# ImportError killed the whole module and the button did nothing at all -
+# an entirely cosmetic cleanup step taking the tool down with it.
+try:
+    from Autodesk.Revit.DB import TemporaryViewMode
+except ImportError:
+    TemporaryViewMode = None
+
 from pyrevit import forms
 
 import System
@@ -110,26 +121,40 @@ def _eid_int(eid):
         return eid.IntegerValue
 
 
-ALIGNABLE_VIEW_TYPES = set([
-    ViewType.FloorPlan, ViewType.CeilingPlan, ViewType.EngineeringPlan,
-    ViewType.AreaPlan, ViewType.Section, ViewType.Elevation,
-    ViewType.Detail, ViewType.ThreeD, ViewType.DraftingView,
-    ViewType.Legend, ViewType.Walkthrough,
-])
+def _view_types(*names):
+    """A set of ViewType members looked up by name, skipping any this Revit
+    build doesn't have.
 
-CROPPABLE_VIEW_TYPES = set([
-    ViewType.FloorPlan, ViewType.CeilingPlan, ViewType.EngineeringPlan,
-    ViewType.AreaPlan, ViewType.Section, ViewType.Elevation,
-    ViewType.Detail, ViewType.ThreeD, ViewType.DraftingView,
-])
+    These sets are built at module level, so a straight ViewType.Xxx here
+    means one renamed or retired enum member raises AttributeError while the
+    script is still being imported - the tool then cannot run at all, even
+    though the missing member may be one no project ever puts on a sheet.
+    Resolving by name degrades to 'that view type is not alignable' instead."""
+    found = set()
+    for name in names:
+        member = getattr(ViewType, name, None)
+        if member is not None:
+            found.add(member)
+    return found
+
+
+ALIGNABLE_VIEW_TYPES = _view_types(
+    "FloorPlan", "CeilingPlan", "EngineeringPlan", "AreaPlan", "Section",
+    "Elevation", "Detail", "ThreeD", "DraftingView", "Legend", "Walkthrough",
+)
+
+CROPPABLE_VIEW_TYPES = _view_types(
+    "FloorPlan", "CeilingPlan", "EngineeringPlan", "AreaPlan", "Section",
+    "Elevation", "Detail", "ThreeD", "DraftingView",
+)
 
 # Views whose CropBox is a real, world-space-linked box (needed to map a
 # model point to a sheet position). Legends/Drafting views aren't tied to
 # model space this way, so grid-based alignment can't apply to them.
-GRID_ALIGNABLE_VIEW_TYPES = set([
-    ViewType.FloorPlan, ViewType.CeilingPlan, ViewType.EngineeringPlan,
-    ViewType.AreaPlan, ViewType.Section, ViewType.Elevation, ViewType.ThreeD,
-])
+GRID_ALIGNABLE_VIEW_TYPES = _view_types(
+    "FloorPlan", "CeilingPlan", "EngineeringPlan", "AreaPlan", "Section",
+    "Elevation", "ThreeD",
+)
 
 
 def get_target_sheets():
@@ -165,7 +190,7 @@ def get_target_sheets():
 def get_viewports_by_type(sheet, include_legend):
     """Dict: ViewType -> [Viewport, ...] for the alignable viewports on a sheet."""
     types = ALIGNABLE_VIEW_TYPES if include_legend else (
-        ALIGNABLE_VIEW_TYPES - set([ViewType.Legend]))
+        ALIGNABLE_VIEW_TYPES - _view_types("Legend"))
     groups = {}
     for vp_id in sheet.GetAllViewports():
         vp = doc.GetElement(vp_id)
@@ -449,13 +474,27 @@ def handle_titleblock(main_tb, other_tb, snap_origin, match_type):
             pass
 
 
+def can_temporarily_hide():
+    """True only when the temporary hide can also be UNDONE.
+
+    Hiding is worth doing only if the matching restore is available: leaving
+    every view in temporary-hide with no way back is far worse than the
+    slightly less exact crop centre the hide was there to improve."""
+    return TemporaryViewMode is not None and hasattr(
+        TemporaryViewMode, "TemporaryHideIsolate")
+
+
 def hide_view_elements(view):
+    if not can_temporarily_hide():
+        return
     elems = FilteredElementCollector(doc, view.Id) \
         .WhereElementIsNotElementType().ToElementIds()
     view.HideElementsTemporary(elems)
 
 
 def unhide_view(view):
+    if not can_temporarily_hide():
+        return
     try:
         view.DisableTemporaryViewMode(TemporaryViewMode.TemporaryHideIsolate)
     except:
