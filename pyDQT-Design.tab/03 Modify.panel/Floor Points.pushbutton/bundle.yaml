@@ -1,0 +1,2 @@
+title: "Floor\nPoints"
+tooltip: "Move the shape-edited points of the selected floors all at once - offset them by a value (e.g. -2000 mm to drop a terrain slab by 2 m) or flatten them onto one elevation. Interior and boundary points can be targeted separately."
