@@ -1912,149 +1912,46 @@ class SheetListTab(object):
                           MessageBoxButton.OK, MessageBoxImage.Error)
     
     def on_rename_click(self, sender, args):
-        """Rename selected sheets with inline dialog"""
-        from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage, Window
-        from System.Windows.Controls import Label, TextBox, Button, StackPanel, Grid, RowDefinition
-        from System.Windows import Thickness, GridLength
-        from Autodesk.Revit.DB import Transaction
-        
+        """Batch rename selected sheets."""
+        from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
+
         selected = [item for item in self.all_items if item.is_selected]
-        
+
         if not selected:
             MessageBox.Show("No sheets selected", "Info",
                           MessageBoxButton.OK, MessageBoxImage.Information)
             return
-        
-        # Use list to store result
-        result = [False, "", "", ""]  # [result, find_text, replace_text, prefix]
-        
-        # Create dialog
-        dialog = Window()
-        dialog.Title = "Rename Sheets"
-        dialog.Width = 450
-        dialog.Height = 250
-        dialog.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
-        
-        main_grid = Grid()
-        main_grid.Margin = Thickness(20)
-        main_grid.RowDefinitions.Add(RowDefinition(Height=GridLength(60)))
-        main_grid.RowDefinitions.Add(RowDefinition(Height=GridLength(60)))
-        main_grid.RowDefinitions.Add(RowDefinition(Height=GridLength(60)))
-        main_grid.RowDefinitions.Add(RowDefinition(Height=GridLength(50)))
-        
-        # Find/Replace
-        find_label = Label()
-        find_label.Content = "Find:"
-        Grid.SetRow(find_label, 0)
-        main_grid.Children.Add(find_label)
-        
-        find_box = TextBox()
-        find_box.Margin = Thickness(0, 25, 0, 0)
-        Grid.SetRow(find_box, 0)
-        main_grid.Children.Add(find_box)
-        
-        replace_label = Label()
-        replace_label.Content = "Replace with:"
-        Grid.SetRow(replace_label, 1)
-        main_grid.Children.Add(replace_label)
-        
-        replace_box = TextBox()
-        replace_box.Margin = Thickness(0, 25, 0, 0)
-        Grid.SetRow(replace_box, 1)
-        main_grid.Children.Add(replace_box)
-        
-        # Prefix
-        prefix_label = Label()
-        prefix_label.Content = "Add Prefix:"
-        Grid.SetRow(prefix_label, 2)
-        main_grid.Children.Add(prefix_label)
-        
-        prefix_box = TextBox()
-        prefix_box.Margin = Thickness(0, 25, 0, 0)
-        Grid.SetRow(prefix_box, 2)
-        main_grid.Children.Add(prefix_box)
-        
-        # Buttons
-        btn_panel = StackPanel()
-        btn_panel.Orientation = System.Windows.Controls.Orientation.Horizontal
-        btn_panel.HorizontalAlignment = System.Windows.HorizontalAlignment.Right
-        Grid.SetRow(btn_panel, 3)
-        
-        def on_ok(s, e):
-            result[0] = True
-            result[1] = find_box.Text
-            result[2] = replace_box.Text
-            result[3] = prefix_box.Text
-            dialog.Close()
-        
-        def on_cancel(s, e):
-            dialog.Close()
-        
-        ok_btn = Button()
-        ok_btn.Content = "OK"
-        ok_btn.Width = 80
-        ok_btn.Height = 30
-        ok_btn.Margin = Thickness(0, 0, 10, 0)
-        ok_btn.Click += on_ok
-        btn_panel.Children.Add(ok_btn)
-        
-        cancel_btn = Button()
-        cancel_btn.Content = "Cancel"
-        cancel_btn.Width = 80
-        cancel_btn.Height = 30
-        cancel_btn.Click += on_cancel
-        btn_panel.Children.Add(cancel_btn)
-        
-        main_grid.Children.Add(btn_panel)
-        dialog.Content = main_grid
-        
-        # Show dialog
-        dialog.ShowDialog()
-        
-        if not result[0]:
-            return
-        
-        # Apply rename
-        t = Transaction(self.doc, "Rename Sheets")
-        t.Start()
-        
+
         try:
+            from sheet_batch_rename_dialog import SheetBatchRenameDialog
+
+            dialog = SheetBatchRenameDialog(selected, self.doc, self.all_items)
+            dialog.ShowDialog()
+
+            if not getattr(dialog, 'result_applied', False):
+                return
+
             count = 0
             for sheet_model in selected:
-                new_number = sheet_model.sheet_number
-                new_name = sheet_model.sheet_name
-                
-                # Find/Replace in number
-                if result[1]:
-                    new_number = new_number.replace(result[1], result[2])
-                    new_name = new_name.replace(result[1], result[2])
-                
-                # Prefix
-                if result[3]:
-                    new_number = result[3] + new_number
-                
-                # Update
-                sheet_model.sheet_number = new_number
-                sheet_model.sheet_name = new_name
                 sheet_model.check_if_modified()
-                
-                # Track change
                 if sheet_model.is_modified:
                     self.change_tracker.track_modification(sheet_model)
                     count += 1
-            
-            t.Commit()
+
             self.data_grid.Items.Refresh()
             self.update_status()
             self.parent_window.update_status_with_counts()
-            
-            MessageBox.Show("Renamed {} sheet(s)\n\nClick Apply to save changes".format(count),
-                          "Success", MessageBoxButton.OK, MessageBoxImage.Information)
+
+            MessageBox.Show(
+                "Renamed {} sheet(s)\n\nClick Apply to save changes".format(count),
+                "Success", MessageBoxButton.OK, MessageBoxImage.Information)
+
         except Exception as e:
-            t.RollBack()
             MessageBox.Show("Error: {}".format(str(e)), "Error",
                           MessageBoxButton.OK, MessageBoxImage.Error)
-    
+            import traceback
+            traceback.print_exc()
+
     def on_delete_click(self, sender, args):
         """Delete selected sheets"""
         from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage, MessageBoxResult
