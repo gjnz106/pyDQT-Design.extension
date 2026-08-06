@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Floor Points v1.0 - DQT
-Bulk-adjust the slab shape points ("Modify Sub Elements") of one or more floors:
-offset every point by a delta, or flatten them onto a target elevation.
+Floor Points v1.1 - DQT
+Bulk-adjust the slab shape points ("Modify Sub Elements") of one or more floors
+or toposolids: offset every point by a delta, or flatten them onto a target
+elevation.
 
 Copyright (c) 2026 Dang Quoc Truong (DQT)
 All rights reserved.
@@ -10,8 +11,9 @@ All rights reserved.
 
 __title__ = "Floor\nPoints"
 __author__ = "Dang Quoc Truong (DQT)"
-__doc__ = ("Move the shape-edited points of selected floors all at once - "
-           "offset them by a value (e.g. -2000 mm) or set them to one elevation.")
+__doc__ = ("Move the shape points of selected floors and toposolids all at "
+           "once - offset them by a value (e.g. -2000 mm) or set them to one "
+           "elevation.")
 
 # ==============================================================================
 # IMPORTS - aliased Revit DB import so WPF's Grid is not overwritten
@@ -58,6 +60,43 @@ try:
 except Exception:
     HAS_UNIT_TYPE_ID = False
 
+# Toposolid arrived in Revit 2024 and is a sibling of Floor, not a subclass -
+# both hang off CeilingAndFloor and both expose the same SlabShapeEditor point
+# API. Look it up defensively so the tool still loads on 2023 and earlier.
+try:
+    TOPOSOLID_TYPE = DB.Toposolid
+except Exception:
+    TOPOSOLID_TYPE = None
+
+
+# ==============================================================================
+# ELEMENT KINDS
+# ==============================================================================
+def is_toposolid(element):
+    if TOPOSOLID_TYPE is None:
+        return False
+    try:
+        return isinstance(element, TOPOSOLID_TYPE)
+    except Exception:
+        return False
+
+
+def is_shape_editable(element):
+    """True for the element types that carry slab shape points.
+
+    Ceilings also derive from CeilingAndFloor but have no shape editor, so the
+    check stays on the two concrete types rather than the shared base."""
+    try:
+        if isinstance(element, DB.Floor):
+            return True
+    except Exception:
+        pass
+    return is_toposolid(element)
+
+
+def element_kind(element):
+    return "toposolid" if is_toposolid(element) else "floor"
+
 
 # ==============================================================================
 # UNITS
@@ -92,25 +131,26 @@ def mm_text(value_ft):
 # ==============================================================================
 # SLAB SHAPE ACCESS
 # ==============================================================================
-def get_slab_shape_editor(floor):
+def get_slab_shape_editor(element):
     """Floor.SlabShapeEditor was a property up to Revit 2023; from 2024 it is
     the method GetSlabShapeEditor(). Try the method first, fall back to the
-    property so the tool works across versions."""
+    property so the tool works across versions. Toposolid only ever had the
+    method, so it takes the first branch."""
     try:
-        sse = floor.GetSlabShapeEditor()
+        sse = element.GetSlabShapeEditor()
         if sse is not None:
             return sse
     except Exception:
         pass
     try:
-        return floor.SlabShapeEditor
+        return element.SlabShapeEditor
     except Exception:
         return None
 
 
 def vertex_kind(vertex):
     """'Interior' for points added inside the slab, 'Boundary' for the corner
-    and edge points that sit on the floor's sketch outline."""
+    and edge points that sit on the sketch outline."""
     try:
         name = str(vertex.VertexType)
     except Exception:
@@ -120,20 +160,20 @@ def vertex_kind(vertex):
     return PTS_BOUNDARY
 
 
-def read_points(floor):
-    """Snapshot of a floor's shape points, read-only (no transaction needed).
+def read_points(element):
+    """Snapshot of an element's shape points, read-only (no transaction).
 
     Returns a list of {'x', 'y', 'z', 'kind'} in vertex order, where z is the
-    absolute project elevation of the point. A floor that has never been shape
-    edited has a disabled editor and returns an empty list."""
-    sse = get_slab_shape_editor(floor)
+    absolute project elevation of the point.
+
+    IsEnabled is deliberately not used as a gate: a toposolid built from points
+    carries a full point set, and reporting it as having none would make the
+    tool useless for exactly the case it is meant for. Whether the editor needs
+    enabling is settled at apply time instead; an element that genuinely has no
+    points still comes back empty here and is skipped."""
+    sse = get_slab_shape_editor(element)
     if sse is None:
         return []
-    try:
-        if not sse.IsEnabled:
-            return []
-    except Exception:
-        pass
 
     points = []
     try:
@@ -159,11 +199,11 @@ def point_selected(point, point_filter):
 # ==============================================================================
 # ELEVATION REFERENCE
 # ==============================================================================
-def probe_zero_reference(floor, sse, points):
+def probe_zero_reference(element, sse, points):
     """Absolute Z that ModifySubElement() treats as elevation 0.
 
     The second argument of ModifySubElement is measured from a reference plane
-    Revit derives from the floor, and which plane that is has not been stated
+    Revit derives from the element, and which plane that is has not been stated
     consistently across API versions (level elevation, with or without the
     floor's height offset). Rather than guess, park the first point at 0,
     regenerate, and read back where it landed - that Z *is* the reference, by
@@ -185,7 +225,7 @@ def probe_zero_reference(floor, sse, points):
         disturbed = True
         doc.Regenerate()
 
-        live_sse = get_slab_shape_editor(floor)
+        live_sse = get_slab_shape_editor(element)
         if live_sse is None:
             return None, sse, None, disturbed
 
@@ -198,22 +238,37 @@ def probe_zero_reference(floor, sse, points):
         return None, sse, None, disturbed
 
 
-def assumed_reference(floor):
-    """Fallback reference plane: the floor's level plus its height offset.
-    Only used when the probe could not run at all."""
+def assumed_reference(element):
+    """Fallback reference plane: the element's level plus its height offset.
+
+    Only used when the probe could not run at all, i.e. when nothing has been
+    modified yet. The built-in height-offset parameter is the floor one; on a
+    toposolid it comes back empty, so fall back to a lookup by name before
+    settling for the bare level elevation."""
     reference = 0.0
     try:
-        level = doc.GetElement(floor.LevelId)
+        level = doc.GetElement(element.LevelId)
         if level is not None:
             reference = level.ProjectElevation
     except Exception:
         pass
+
+    offset = None
     try:
-        param = floor.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM)
+        param = element.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM)
         if param is not None:
-            reference += param.AsDouble()
+            offset = param.AsDouble()
     except Exception:
         pass
+    if offset is None:
+        try:
+            param = element.LookupParameter("Height Offset From Level")
+            if param is not None:
+                offset = param.AsDouble()
+        except Exception:
+            pass
+    if offset is not None:
+        reference += offset
     return reference
 
 
@@ -292,31 +347,45 @@ def preview_result(points, mode, value_ft, point_filter):
     return selected, moved, lowest, highest
 
 
-def apply_to_floor(floor, points, mode, value_ft, point_filter):
-    """Write the new elevations onto one floor. Must run inside a transaction.
+def apply_to_element(element, points, mode, value_ft, point_filter):
+    """Write the new elevations onto one floor or toposolid. Must run inside a
+    transaction.
 
-    Raises on any condition that would leave the floor in a state we cannot
-    account for, so the caller can roll that floor back untouched."""
-    sse = get_slab_shape_editor(floor)
+    Raises on any condition that would leave the element in a state we cannot
+    account for, so the caller can roll that element back untouched."""
+    sse = get_slab_shape_editor(element)
     if sse is None:
-        raise Exception("no slab shape editor on this floor")
+        raise Exception("no slab shape editor on this element")
 
-    ref_z, sse, live, disturbed = probe_zero_reference(floor, sse, points)
+    # Points can be read from an editor that is not enabled yet; writing to one
+    # needs it turned on. If enabling changes the point set, the match below
+    # fails and the element is rolled back rather than half-edited.
+    try:
+        if not sse.IsEnabled:
+            sse.Enable()
+            doc.Regenerate()
+            sse = get_slab_shape_editor(element)
+            if sse is None:
+                raise Exception("shape editing could not be enabled")
+    except AttributeError:
+        pass
+
+    ref_z, sse, live, disturbed = probe_zero_reference(element, sse, points)
 
     if ref_z is None:
         if disturbed:
             # A point was parked at elevation 0 and we cannot work out where
             # that is - the only safe move is to let the caller roll back.
             raise Exception("could not read back the elevation reference")
-        ref_z = assumed_reference(floor)
-        sse = get_slab_shape_editor(floor)
+        ref_z = assumed_reference(element)
+        sse = get_slab_shape_editor(element)
         try:
             live = match_vertices(points, list(sse.SlabShapeVertices))
         except Exception:
-            raise Exception("could not read the floor's points")
+            raise Exception("could not read the element's points")
 
     if live is None:
-        raise Exception("the floor's points changed while reading them")
+        raise Exception("the element's points changed while reading them")
 
     moved = 0
     for index, point in enumerate(points):
@@ -341,54 +410,53 @@ def apply_to_floor(floor, points, mode, value_ft, point_filter):
 # ==============================================================================
 # SELECTION
 # ==============================================================================
-class FloorSelectionFilter(ISelectionFilter):
+class ShapeEditableFilter(ISelectionFilter):
     def AllowElement(self, element):
-        try:
-            return isinstance(element, DB.Floor)
-        except Exception:
-            return False
+        return is_shape_editable(element)
 
     def AllowReference(self, reference, position):
         return False
 
 
-def get_target_floors():
-    """Pre-selected floors if there are any, otherwise ask the user to pick."""
-    floors = []
+def get_target_elements():
+    """Pre-selected floors/toposolids if there are any, otherwise ask for a
+    pick."""
+    elements = []
     try:
         for element_id in uidoc.Selection.GetElementIds():
             element = doc.GetElement(element_id)
-            if isinstance(element, DB.Floor):
-                floors.append(element)
+            if is_shape_editable(element):
+                elements.append(element)
     except Exception:
         pass
 
-    if floors:
-        return floors
+    if elements:
+        return elements
 
     try:
         references = uidoc.Selection.PickObjects(
-            ObjectType.Element, FloorSelectionFilter(),
-            "Select the floors whose points you want to move, then Finish")
+            ObjectType.Element, ShapeEditableFilter(),
+            "Select the floors or toposolids whose points you want to move, "
+            "then Finish")
         for reference in references:
             element = doc.GetElement(reference.ElementId)
-            if isinstance(element, DB.Floor):
-                floors.append(element)
+            if is_shape_editable(element):
+                elements.append(element)
     except Exception:
         return []       # user pressed Escape
-    return floors
+    return elements
 
 
-def floor_label(floor):
+def element_label(element):
     try:
-        floor_type = doc.GetElement(floor.GetTypeId())
-        name = floor_type.get_Parameter(
+        element_type = doc.GetElement(element.GetTypeId())
+        name = element_type.get_Parameter(
             BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
         if name:
             return name
     except Exception:
         pass
-    return "Floor"
+    return element_kind(element).capitalize()
 
 
 # ==============================================================================
@@ -397,7 +465,7 @@ def floor_label(floor):
 XAML_MAIN = """
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Floor Points v1.0 - DQT"
+        Title="Floor &amp; Toposolid Points v1.1 - DQT"
         Width="520" Height="640"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -460,9 +528,9 @@ XAML_MAIN = """
     <Border Grid.Row="0" Background="#F0CC88"
             BorderBrush="#D4B87A" BorderThickness="0,0,0,2" Padding="16,12">
       <StackPanel>
-        <TextBlock Text="Floor Points" Foreground="#5D4E37"
+        <TextBlock Text="Floor &amp; Toposolid Points" Foreground="#5D4E37"
                    FontSize="18" FontWeight="Bold"/>
-        <TextBlock Text="Move shape-edited floor points all at once"
+        <TextBlock Text="Move shape points all at once"
                    Foreground="#5D4E37" FontSize="11" Margin="0,2,0,0"/>
       </StackPanel>
     </Border>
@@ -547,10 +615,10 @@ XAML_MAIN = """
 
 class FloorPointsDialog(object):
     """Themed settings window. No element picking happens while it is open -
-    the floors are collected before it is shown."""
+    the elements are collected before it is shown."""
 
-    def __init__(self, floor_data):
-        self.floor_data = floor_data        # [(floor, points), ...]
+    def __init__(self, element_data):
+        self.element_data = element_data    # [(element, points), ...]
         self.confirmed = False
         self.mode = MODE_OFFSET
         self.point_filter = PTS_ALL
@@ -588,15 +656,26 @@ class FloorPointsDialog(object):
     # -- helpers ------------------------------------------------------------
     def _all_points(self):
         points = []
-        for _, floor_points in self.floor_data:
-            points.extend(floor_points)
+        for _, element_points in self.element_data:
+            points.extend(element_points)
         return points
+
+    def _source_text(self):
+        floors = sum(1 for element, _ in self.element_data
+                     if element_kind(element) == "floor")
+        toposolids = len(self.element_data) - floors
+        parts = []
+        if floors:
+            parts.append("{0} floor(s)".format(floors))
+        if toposolids:
+            parts.append("{0} toposolid(s)".format(toposolids))
+        return " + ".join(parts)
 
     def _fill_summary(self):
         points = self._all_points()
         interior = sum(1 for p in points if p['kind'] == PTS_INTERIOR)
-        self.summary_text.Text = "{0} floor(s), {1} point(s) - {2} interior, {3} boundary".format(
-            len(self.floor_data), len(points), interior, len(points) - interior)
+        self.summary_text.Text = "{0}, {1} point(s) - {2} interior, {3} boundary".format(
+            self._source_text(), len(points), interior, len(points) - interior)
 
         if points:
             lowest = min(p['z'] for p in points)
@@ -679,28 +758,28 @@ class FloorPointsDialog(object):
 # MAIN
 # ==============================================================================
 def run():
-    floors = get_target_floors()
-    if not floors:
+    elements = get_target_elements()
+    if not elements:
         return
 
-    floor_data = []
-    flat = 0
-    for floor in floors:
-        points = read_points(floor)
+    element_data = []
+    empty = 0
+    for element in elements:
+        points = read_points(element)
         if points:
-            floor_data.append((floor, points))
+            element_data.append((element, points))
         else:
-            flat += 1
+            empty += 1
 
-    if not floor_data:
+    if not element_data:
         TaskDialog.Show(
             "Floor Points",
-            "None of the {0} selected floor(s) have shape points.\n\n"
+            "None of the {0} selected element(s) have shape points.\n\n"
             "Add points with Modify > Shape Editing > Add Point first, or use "
-            "the floor's Height Offset From Level to move a flat slab.".format(len(floors)))
+            "Height Offset From Level to move a flat slab.".format(len(elements)))
         return
 
-    dialog = FloorPointsDialog(floor_data)
+    dialog = FloorPointsDialog(element_data)
     if not dialog.show():
         return
 
@@ -715,27 +794,28 @@ def run():
     group = TransactionGroup(doc, "DQT - Floor Point Elevation")
     group.Start()
     try:
-        for floor, points in floor_data:
+        for element, points in element_data:
             transaction = Transaction(doc, "DQT - Floor Point Elevation")
             transaction.Start()
             try:
-                moved = apply_to_floor(floor, points, mode, value_ft, point_filter)
+                moved = apply_to_element(element, points, mode, value_ft,
+                                         point_filter)
                 transaction.Commit()
                 moved_total += moved
                 ok += 1
             except Exception as error:
                 transaction.RollBack()
                 failures.append("{0} (id {1}): {2}".format(
-                    floor_label(floor), floor.Id, str(error)))
+                    element_label(element), element.Id, str(error)))
         group.Assimilate()
     except Exception as error:
         group.RollBack()
         TaskDialog.Show("Floor Points", "Error: {0}".format(str(error)))
         return
 
-    message = "{0} point(s) moved on {1} floor(s).".format(moved_total, ok)
-    if flat:
-        message += "\n\n{0} selected floor(s) had no shape points and were skipped.".format(flat)
+    message = "{0} point(s) moved on {1} element(s).".format(moved_total, ok)
+    if empty:
+        message += "\n\n{0} selected element(s) had no shape points and were skipped.".format(empty)
     if failures:
         message += "\n\nNot changed ({0}):\n".format(len(failures)) + "\n".join(failures[:10])
         if len(failures) > 10:
