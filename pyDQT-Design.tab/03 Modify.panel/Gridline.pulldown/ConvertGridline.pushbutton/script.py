@@ -42,6 +42,19 @@ from System.Windows.Media import SolidColorBrush, BrushConverter
 from System.Windows.Markup import XamlReader
 from System.IO import StringReader
 
+
+# =====================================================
+# REVIT VERSION COMPATIBILITY
+# =====================================================
+def _eid_int(eid):
+    """Get integer value of an ElementId across Revit 2024-2027.
+    .IntegerValue is deprecated in 2024+ and removed in 2026+; use .Value."""
+    try:
+        return eid.Value
+    except:
+        return eid.IntegerValue
+
+
 # =====================================================
 # REVIT CONTEXT
 # =====================================================
@@ -250,7 +263,7 @@ class GridItem(System.Object):
         self._view = view
         self._is_checked = False
         self._grid_name = grid.Name if grid.Name else "Unnamed"
-        self._element_id = str(grid.Id.IntegerValue)
+        self._element_id = str(_eid_int(grid.Id))
         
         # Determine 3D or 2D extent
         try:
@@ -452,7 +465,7 @@ class GridSwapWindow(object):
                 name = v.Name
                 # Avoid duplicate names
                 if name in self.views_dict:
-                    name = "{} (ID:{})".format(name, v.Id.IntegerValue)
+                    name = "{} (ID:{})".format(name, _eid_int(v.Id))
                 self.cmb_view.Items.Add(name)
                 self.views_dict[name] = v
         
