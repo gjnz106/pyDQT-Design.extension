@@ -5,6 +5,7 @@ layout:
   - Wall Cut Profile
   - CadtoWall
   - CadtoFloor
+  - Floor Points
   - RoomtoArea
   - Autojoin
   - Gridline
