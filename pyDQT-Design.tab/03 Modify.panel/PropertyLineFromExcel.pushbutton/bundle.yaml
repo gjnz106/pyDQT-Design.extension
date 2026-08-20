@@ -1,0 +1,24 @@
+title: "Property\nLine"
+author: Dang Quoc Truong (DQT)
+name: PropertyLineFromExcel
+tooltip: >
+  Draw a Property Line (or Model Line boundary) from Easting/Northing
+  points in an Excel file - no manual bearing/distance entry.
+
+  Workflow:
+  - Pick an .xlsx file. The tool scans every sheet for coordinate tables
+    (a header row with Easting/X and Northing/Y columns, a Point/Name
+    column to their left, and a title row above - like a typical
+    "Indicative Coordinates" schedule)
+  - Tick which table(s) to draw
+  - Choose Property Line (one site boundary, replaces any existing one)
+    or Model Lines (a closed loop per table - use this for several
+    boundaries from one file, e.g. working limit + jetty limits)
+  - Choose whether the X/Y values are Shared/Survey coordinates
+    (converted through the project's Survey Point, e.g. SVY21 easting/
+    northing) or already Internal/Project coordinates, the input unit,
+    and which Level to flatten the boundary onto
+
+  Only .xlsx is supported (read directly, no Excel installation needed).
+
+  Copyright (c) 2026 Dang Quoc Truong (DQT)
