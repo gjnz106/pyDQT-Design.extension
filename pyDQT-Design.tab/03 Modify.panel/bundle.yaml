@@ -6,6 +6,7 @@ layout:
   - CadtoWall
   - CadtoFloor
   - Floor Points
+  - PropertyLineFromExcel
   - RoomtoArea
   - Autojoin
   - Gridline
