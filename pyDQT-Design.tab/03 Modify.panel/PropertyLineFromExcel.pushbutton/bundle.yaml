@@ -9,7 +9,11 @@ tooltip: >
   - Pick an .xlsx file. The tool scans every sheet for coordinate tables
     (a header row with Easting/X and Northing/Y columns, a Point/Name
     column to their left, and a title row above - like a typical
-    "Indicative Coordinates" schedule)
+    "Indicative Coordinates" schedule). If one header is shared by
+    several boundaries listed back-to-back with no row between them
+    (e.g. WL1..WL8 immediately followed by LB1..LB30), it is split into
+    one boundary per label prefix rather than looped through as one -
+    only works when point labels end in a letters+number pattern
   - Tick which table(s) to draw - one closed Model Line loop per table,
     so several boundaries from one file (e.g. working limit + jetty
     limits) can be drawn in one go
