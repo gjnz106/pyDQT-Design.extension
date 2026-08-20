@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Property Line from Excel v1.0 - DQT
-Draws a Property Line, or a closed loop of Model Lines, from Easting/
-Northing (or plain X/Y) coordinate tables found in an .xlsx file - the
-same points you would otherwise retype one by one into Revit's native
-Property Lines > Edit Table dialog.
+Property Line from Excel v1.1 - DQT
+Draws a closed loop of Model Lines - a boundary - from Easting/Northing
+(or plain X/Y) coordinate tables found in an .xlsx file.
+
+Revit's own PropertyLine element cannot be created through the public
+API (Document.Create has no NewPropertyLine method, and PropertyLine has
+no Create method either, on any Revit version this suite supports) - the
+only officially supported way to get a real Property Line is Revit's own
+Property Lines > Edit Table dialog. This tool draws the boundary as plain
+Model Lines instead, which is real, supported API and is enough to see
+and check the shape; promoting it into a true Property Line still needs
+that native dialog.
 
 Copyright (c) 2026 Dang Quoc Truong (DQT)
 All rights reserved.
@@ -12,9 +19,9 @@ All rights reserved.
 
 __title__ = "Property\nLine"
 __author__ = "Dang Quoc Truong (DQT)"
-__doc__ = ("Draw a Property Line or Model Line boundary from Easting/Northing "
-           "points in an Excel file - pick the .xlsx, tick the coordinate "
-           "table(s) found, and draw.")
+__doc__ = ("Draw a closed Model Line boundary from Easting/Northing points in "
+           "an Excel file - pick the .xlsx, tick the coordinate table(s) "
+           "found, and draw.")
 
 # ==============================================================================
 # IMPORTS - aliased Revit DB import so WPF's Grid is not overwritten
@@ -40,7 +47,7 @@ from System.Windows.Controls import CheckBox, ComboBoxItem
 
 import Autodesk.Revit.DB as DB
 from Autodesk.Revit.DB import Transaction, TransactionGroup, UnitUtils
-from Autodesk.Revit.UI import TaskDialog, TaskDialogCommonButtons, TaskDialogResult
+from Autodesk.Revit.UI import TaskDialog
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -63,9 +70,6 @@ UNIT_FT = "ft"
 
 COORD_SHARED = "shared"
 COORD_INTERNAL = "internal"
-
-OUTPUT_PROPERTY_LINE = "property_line"
-OUTPUT_MODEL_LINES = "model_lines"
 
 DUP_TOL_MM = 1.0            # points closer than this are treated as one point
 TITLE_LOOKUP_ROWS = 4        # how many rows above a header to search for a title
@@ -369,21 +373,6 @@ def make_sketch_plane(elevation_ft):
     return DB.SketchPlane.Create(doc, plane)
 
 
-def make_curve_array(points_ft, closed):
-    array = DB.CurveArray()
-    for p1, p2 in segment_pairs(points_ft, closed):
-        xyz1 = DB.XYZ(p1[1], p1[2], p1[3])
-        xyz2 = DB.XYZ(p2[1], p2[2], p2[3])
-        array.Append(DB.Line.CreateBound(xyz1, xyz2))
-    return array
-
-
-def create_property_line(points_ft, closed, elevation_ft):
-    curve_array = make_curve_array(points_ft, closed)
-    sketch_plane = make_sketch_plane(elevation_ft)
-    doc.Create.NewPropertyLine(curve_array, sketch_plane)
-
-
 def create_model_lines(points_ft, closed, elevation_ft):
     sketch_plane = make_sketch_plane(elevation_ft)
     created = 0
@@ -512,15 +501,11 @@ XAML_MAIN = """
           </ScrollViewer>
         </Border>
 
-        <TextBlock Text="Draw as" Style="{StaticResource SectionLabel}"/>
-        <StackPanel>
-          <RadioButton x:Name="RbPropertyLine" GroupName="Output" IsChecked="True"
-                       Style="{StaticResource DqtRadio}"
-                       Content="Property Line - one site boundary (replaces any existing one)"/>
-          <RadioButton x:Name="RbModelLines" GroupName="Output"
-                       Style="{StaticResource DqtRadio}"
-                       Content="Model Lines - a closed loop per ticked table"/>
-        </StackPanel>
+        <Border Background="#FDEEEE" BorderBrush="#E0B4B4" BorderThickness="1"
+                CornerRadius="4" Padding="8,6" Margin="0,10,0,0">
+          <TextBlock Foreground="#8A3B3B" FontSize="11" TextWrapping="Wrap"
+                     Text="Drawn as Model Lines (a closed boundary loop), one per ticked table. Revit's own Property Line object cannot be created through its public API, so promoting this into a true Property Line still needs Revit's native Property Lines &gt; Edit Table dialog."/>
+        </Border>
 
         <TextBlock Text="The X/Y values in the file are" Style="{StaticResource SectionLabel}"/>
         <StackPanel>
@@ -604,7 +589,6 @@ class PropertyLineDialog(object):
         self.shared_components = shared_components
         self.confirmed = False
 
-        self.output_type = OUTPUT_PROPERTY_LINE
         self.coord_mode = COORD_SHARED
         self.unit = UNIT_M
         self.close_loop = True
@@ -616,8 +600,6 @@ class PropertyLineDialog(object):
 
         self.file_text = self.window.FindName("FileText")
         self.tables_panel = self.window.FindName("TablesPanel")
-        self.rb_property_line = self.window.FindName("RbPropertyLine")
-        self.rb_model_lines = self.window.FindName("RbModelLines")
         self.rb_shared = self.window.FindName("RbShared")
         self.rb_internal = self.window.FindName("RbInternal")
         self.transform_warning = self.window.FindName("TransformWarning")
@@ -638,7 +620,7 @@ class PropertyLineDialog(object):
             box.Content = "{0}  -  {1} point(s)".format(table['title'], len(table['points']))
             box.Tag = index
             box.IsChecked = (index == 0)
-            box.Checked += self._on_table_checked
+            box.Checked += self._on_options_changed
             box.Unchecked += self._on_options_changed
             self.tables_panel.Children.Add(box)
             self.checkboxes.append(box)
@@ -664,8 +646,6 @@ class PropertyLineDialog(object):
         else:
             self.transform_warning.Text = ""
 
-        self.rb_property_line.Checked += self._on_output_changed
-        self.rb_model_lines.Checked += self._on_output_changed
         self.rb_shared.Checked += self._on_options_changed
         self.rb_internal.Checked += self._on_options_changed
         self.rb_unit_m.Checked += self._on_options_changed
@@ -683,31 +663,6 @@ class PropertyLineDialog(object):
     def _checked_indices(self):
         return [box.Tag for box in self.checkboxes if box.IsChecked]
 
-    def _on_table_checked(self, sender, args):
-        if self.rb_property_line.IsChecked:
-            for box in self.checkboxes:
-                if box is not sender and box.IsChecked:
-                    box.IsChecked = False
-        try:
-            self._refresh()
-        except Exception:
-            pass
-
-    def _on_output_changed(self, sender, args):
-        is_property_line = self.rb_property_line.IsChecked
-        self.chk_close.IsEnabled = not is_property_line
-        if is_property_line:
-            self.chk_close.IsChecked = True
-            checked = self._checked_indices()
-            if len(checked) > 1:
-                keep = checked[0]
-                for box in self.checkboxes:
-                    if box.Tag != keep:
-                        box.IsChecked = False
-            elif not checked and self.checkboxes:
-                self.checkboxes[0].IsChecked = True
-        self._on_options_changed(sender, args)
-
     def _on_options_changed(self, sender, args):
         try:
             self._refresh()
@@ -715,8 +670,6 @@ class PropertyLineDialog(object):
             pass
 
     def _refresh(self):
-        self.output_type = (OUTPUT_PROPERTY_LINE if self.rb_property_line.IsChecked
-                             else OUTPUT_MODEL_LINES)
         self.coord_mode = COORD_SHARED if self.rb_shared.IsChecked else COORD_INTERNAL
         if self.rb_unit_mm.IsChecked:
             self.unit = UNIT_MM
@@ -740,14 +693,12 @@ class PropertyLineDialog(object):
             return
 
         total_points = sum(len(self.tables[i]['points']) for i in self.selected_indices)
-        min_needed = 3 if (self.close_loop or self.output_type == OUTPUT_PROPERTY_LINE) else 2
+        min_needed = 3 if self.close_loop else 2
         too_small = [self.tables[i]['title'] for i in self.selected_indices
                      if len(self.tables[i]['points']) < min_needed]
 
         lines = ["{0} table(s), {1} point(s) total.".format(
             len(self.selected_indices), total_points)]
-        if self.output_type == OUTPUT_PROPERTY_LINE:
-            lines.append("Will replace this project's Property Line, if it has one.")
         if too_small:
             lines.append("Needs at least {0} points per table - too few in: {1}".format(
                 min_needed, ", ".join(too_small)))
@@ -807,24 +758,11 @@ def run():
     if not dialog.show():
         return
 
-    output_type = dialog.output_type
     coord_mode = dialog.coord_mode
     unit = dialog.unit
     close_loop = dialog.close_loop
     elevation_ft = dialog.selected_level.Elevation
     selected_tables = [tables[i] for i in dialog.selected_indices]
-
-    if output_type == OUTPUT_PROPERTY_LINE:
-        existing = list(DB.FilteredElementCollector(doc).OfClass(DB.PropertyLine).ToElements())
-        if existing:
-            confirm = TaskDialog("Property Line from Excel")
-            confirm.MainInstruction = "Replace the existing property line?"
-            confirm.MainContent = (
-                "This project already has a property line. A project can only "
-                "have one - creating this one will replace it.")
-            confirm.CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No
-            if confirm.Show() != TaskDialogResult.Yes:
-                return
 
     results = []
     ok_any = False
@@ -832,25 +770,20 @@ def run():
     group.Start()
     try:
         for table in selected_tables:
-            effective_close = True if output_type == OUTPUT_PROPERTY_LINE else close_loop
             transaction = Transaction(doc, "DQT - Property Line from Excel")
             transaction.Start()
             try:
                 points_ft = build_points_ft(table, unit, coord_mode, elevation_ft,
                                             dialog.shared_components)
-                cleaned, dropped = dedupe_consecutive(points_ft, effective_close)
-                min_needed = 3 if effective_close else 2
+                cleaned, dropped = dedupe_consecutive(points_ft, close_loop)
+                min_needed = 3 if close_loop else 2
                 if len(cleaned) < min_needed:
                     raise Exception(
                         "only {0} distinct point(s) after removing duplicates - "
                         "need at least {1}".format(len(cleaned), min_needed))
 
-                if output_type == OUTPUT_PROPERTY_LINE:
-                    create_property_line(cleaned, effective_close, elevation_ft)
-                    made = "Property Line"
-                else:
-                    count = create_model_lines(cleaned, effective_close, elevation_ft)
-                    made = "{0} Model Line segment(s)".format(count)
+                count = create_model_lines(cleaned, close_loop, elevation_ft)
+                made = "{0} Model Line segment(s)".format(count)
 
                 transaction.Commit()
                 ok_any = True
