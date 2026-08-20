@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Property Line from Excel v1.1 - DQT
+Property Line from Excel v1.2 - DQT
 Draws a closed loop of Model Lines - a boundary - from Easting/Northing
-(or plain X/Y) coordinate tables found in an .xlsx file.
+(or plain X/Y) coordinate tables found in an .xlsx file. A header shared
+by several boundaries listed back-to-back with no separating row (e.g.
+WL1..WL8 immediately followed by LB1..LB30) is split one boundary per
+label prefix, rather than looped through as a single bogus shape.
 
 Revit's own PropertyLine element cannot be created through the public
 API (Document.Create has no NewPropertyLine method, and PropertyLine has
@@ -221,8 +224,46 @@ def _is_northing_header(text):
     return ('NORTH' in u) or (re.search(r'(?:^|[^A-Z])Y(?:[^A-Z]|$)', u) is not None)
 
 
+def split_label(label):
+    """'WL12' -> ('WL', 12); a label with no trailing-number suffix -> (None, None)."""
+    m = re.match(r'^([A-Za-z][A-Za-z_\-]*?)(\d+)$', label or "")
+    if not m:
+        return None, None
+    return m.group(1), int(m.group(2))
+
+
+def split_into_boundaries(points):
+    """A single header is sometimes shared by more than one boundary stacked
+    back-to-back with no separating row - e.g. WL1..WL8 (the working limit)
+    immediately followed by LB1..LB30 (the lease boundary), both listed
+    under one "Indicative Coordinates" title. Looping straight through such
+    a list draws one bogus loop through two unrelated boundaries.
+
+    Split wherever the point label's letter prefix changes (WL -> LB, LHJ ->
+    PRJ, ...) so each run of same-prefix labels becomes its own boundary.
+    Falls back to a single group - the previous behaviour - the moment any
+    label does not end in a plain letters+number pattern, since the split
+    signal does not apply to freeform names."""
+    groups = []
+    current = []
+    current_prefix = None
+    for label, x, y in points:
+        prefix, _num = split_label(label)
+        if prefix is None:
+            return [points]
+        if current and prefix != current_prefix:
+            groups.append(current)
+            current = []
+        current.append((label, x, y))
+        current_prefix = prefix
+    if current:
+        groups.append(current)
+    return groups
+
+
 def find_tables(sheet_name, grid):
-    """Every coordinate table in one sheet.
+    """Every coordinate table in one sheet - one entry per boundary, which is
+    not always one entry per header (see split_into_boundaries).
 
     A table is triggered by a row holding both an Easting-like and a
     Northing-like header cell. The Point/Name column is assumed to sit
@@ -277,12 +318,19 @@ def find_tables(sheet_name, grid):
             points.append((label.strip(), x_val, y_val))
             row += 1
 
-        if len(points) >= 2:
+        groups = split_into_boundaries(points)
+        for group in groups:
+            if len(group) < 2:
+                continue
+            group_title = title
+            if len(groups) > 1:
+                prefix, _prefix_num = split_label(group[0][0])
+                group_title = "{0} [{1}]".format(title, prefix)
             tables.append({
                 'sheet': sheet_name,
-                'title': title,
+                'title': group_title,
                 'header_row': r,
-                'points': points,
+                'points': group,
             })
     return tables
 
