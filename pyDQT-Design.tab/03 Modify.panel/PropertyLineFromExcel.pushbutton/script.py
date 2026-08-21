@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Property Line from Excel v1.2 - DQT
+Property Line from Excel v1.3 - DQT
 Draws a closed loop of Model Lines - a boundary - from Easting/Northing
 (or plain X/Y) coordinate tables found in an .xlsx file. A header shared
 by several boundaries listed back-to-back with no separating row (e.g.
@@ -337,50 +337,106 @@ def find_tables(sheet_name, grid):
 
 # ==============================================================================
 # COORDINATE TRANSFORM
-# The math is kept in plain-float helpers (transform_components / apply_affine)
-# rather than inline Transform.OfPoint calls, so it can be unit-tested without
-# a live Revit Transform object.
+#
+# The internal -> shared map is MEASURED from the model rather than read off a
+# transform object. ProjectLocation.GetProjectPosition(p) answers "what does
+# Revit's own Report Shared Coordinates say about internal point p", which is
+# exactly the number the survey schedule is quoted in. Probing it at three
+# points pins the whole map down without assuming which way any API-supplied
+# transform runs, or which way ProjectPosition.Angle is measured - the two
+# things that are easy to get backwards and that put the boundary in the wrong
+# place once the project has acquired coordinates.
+#
+# The maths stays in plain-float helpers so it can be unit-tested without a
+# live Revit document.
 # ==============================================================================
-def transform_components(transform):
-    o, bx, by, bz = transform.Origin, transform.BasisX, transform.BasisY, transform.BasisZ
-    return (o.X, o.Y, o.Z, bx.X, bx.Y, bx.Z, by.X, by.Y, by.Z, bz.X, bz.Y, bz.Z)
+def sample_project_position(x_ft, y_ft):
+    """Shared (EastWest, NorthSouth) of one internal point, in feet."""
+    position = doc.ActiveProjectLocation.GetProjectPosition(DB.XYZ(x_ft, y_ft, 0.0))
+    return position.EastWest, position.NorthSouth
 
 
-def apply_affine(components, x, y, z):
-    """Revit's Transform.OfPoint formula: Origin + x*BasisX + y*BasisY + z*BasisZ,
-    worked out per plain (x, y, z) coordinate."""
-    ox, oy, oz, bxx, bxy, bxz, byx, byy, byz, bzx, bzy, bzz = components
-    return (ox + x * bxx + y * byx + z * bzx,
-            oy + x * bxy + y * byy + z * bzy,
-            oz + x * bxz + y * byz + z * bzz)
+def build_shared_to_internal(samples):
+    """Invert the internal -> shared map, given its value at three points.
+
+    `samples` is the shared (E, N) of internal (0,0), (1,0) and (0,1). Revit
+    maps internal to shared with a rotation about Z plus a translation, so
+
+        shared = origin + x * U + y * V
+
+    where U and V are the shared-space images of the internal unit axes -
+    read straight off the second and third probes. Inverting that 2x2 system
+    gives the map this tool needs.
+
+    Returns (ew0, ns0, a, b, c, d) with
+
+        x = a * (E - ew0) + b * (N - ns0)
+        y = c * (E - ew0) + d * (N - ns0)
+
+    or None if the probes came back degenerate (which should not happen for a
+    rotation, and would mean the answer cannot be trusted)."""
+    (ew0, ns0), (ew_x, ns_x), (ew_y, ns_y) = samples
+    ux, uy = ew_x - ew0, ns_x - ns0
+    vx, vy = ew_y - ew0, ns_y - ns0
+    det = ux * vy - vx * uy
+    if abs(det) < 1e-9:
+        return None
+    return (ew0, ns0, vy / det, -vx / det, -uy / det, ux / det)
 
 
-def is_identity_components(components, tol=1e-6):
-    ox, oy, oz, bxx, bxy, bxz, byx, byy, byz, bzx, bzy, bzz = components
-    return (abs(ox) < tol and abs(oy) < tol and abs(oz) < tol and
-            abs(bxx - 1) < tol and abs(bxy) < tol and abs(bxz) < tol and
-            abs(byx) < tol and abs(byy - 1) < tol and abs(byz) < tol and
-            abs(bzx) < tol and abs(bzy) < tol and abs(bzz - 1) < tol)
+def shared_to_internal(mapping, ew, ns):
+    """One shared (Easting, Northing) pair to internal (x, y), in feet."""
+    ew0, ns0, a, b, c, d = mapping
+    de, dn = ew - ew0, ns - ns0
+    return (a * de + b * dn, c * de + d * dn)
 
 
-def get_shared_to_internal_components():
-    """None if the project location/transform could not be read."""
+def is_identity_mapping(mapping, tol=1e-6):
+    """True when shared and internal coordinates are the same thing, i.e. the
+    project has not been positioned yet."""
+    ew0, ns0, a, b, c, d = mapping
+    return (abs(ew0) < tol and abs(ns0) < tol and
+            abs(a - 1) < tol and abs(b) < tol and
+            abs(c) < tol and abs(d - 1) < tol)
+
+
+def get_shared_to_internal():
+    """None if the project location could not be probed."""
     try:
-        transform = doc.ActiveProjectLocation.GetTransform().Inverse
-        return transform_components(transform)
+        samples = (sample_project_position(0.0, 0.0),
+                   sample_project_position(1.0, 0.0),
+                   sample_project_position(0.0, 1.0))
+    except Exception:
+        return None
+    return build_shared_to_internal(samples)
+
+
+def roundtrip_error_ft(mapping, ew, ns):
+    """Convert a shared point to internal, then ask Revit what the shared
+    coordinates of that internal point are, and return how far off it came
+    back. Zero means the conversion agrees with Revit's own Report Shared
+    Coordinates - the check that would have caught the transform running the
+    wrong way. None if it could not be run."""
+    try:
+        x, y = shared_to_internal(mapping, ew, ns)
+        back_ew, back_ns = sample_project_position(x, y)
+        return ((back_ew - ew) ** 2 + (back_ns - ns) ** 2) ** 0.5
     except Exception:
         return None
 
 
-def build_points_ft(table, unit, coord_mode, elevation_ft, shared_components):
+def build_points_ft(table, unit, coord_mode, elevation_ft, mapping):
     """[(label, x_ft, y_ft, z_ft), ...] in Revit internal units, flattened
-    onto elevation_ft. Pure math - no DB.XYZ construction here."""
+    onto elevation_ft. Pure math - no DB.XYZ construction here.
+
+    The file's first column is an Easting and the second a Northing, so in
+    shared mode they go into the map in that order, not as raw x/y."""
     out = []
-    for label, x_raw, y_raw in table['points']:
-        x_ft = to_internal(x_raw, unit)
-        y_ft = to_internal(y_raw, unit)
-        if coord_mode == COORD_SHARED and shared_components is not None:
-            x_ft, y_ft, _ = apply_affine(shared_components, x_ft, y_ft, 0.0)
+    for label, easting_raw, northing_raw in table['points']:
+        x_ft = to_internal(easting_raw, unit)
+        y_ft = to_internal(northing_raw, unit)
+        if coord_mode == COORD_SHARED and mapping is not None:
+            x_ft, y_ft = shared_to_internal(mapping, x_ft, y_ft)
         out.append((label, x_ft, y_ft, elevation_ft))
     return out
 
@@ -632,10 +688,10 @@ class PropertyLineDialog(object):
     built - nothing here touches the document until Create is pressed and
     the window has closed."""
 
-    def __init__(self, filepath, tables, levels, shared_components):
+    def __init__(self, filepath, tables, levels, mapping):
         self.tables = tables
         self.levels = levels
-        self.shared_components = shared_components
+        self.mapping = mapping
         self.confirmed = False
 
         self.coord_mode = COORD_SHARED
@@ -682,16 +738,16 @@ class PropertyLineDialog(object):
         if levels:
             self.cmb_level.SelectedIndex = 0
 
-        if shared_components is None:
+        if mapping is None:
             self.transform_warning.Text = (
-                "Could not read this project's Survey Point transform - "
+                "Could not read this project's shared-coordinate position - "
                 "Shared coordinates will be used as Internal instead.")
-        elif is_identity_components(shared_components):
+        elif is_identity_mapping(mapping):
             self.transform_warning.Text = (
-                "This project's Survey Point does not appear to be positioned "
-                "yet (transform is identity) - Shared points may land in the "
-                "wrong place. Check Manage > Coordinates first, or use "
-                "Internal coordinates.")
+                "This project has not acquired or published shared coordinates "
+                "yet (shared and internal coordinates are the same) - Shared "
+                "points will land far from the origin. Check Manage > "
+                "Coordinates first, or use Internal coordinates.")
         else:
             self.transform_warning.Text = ""
 
@@ -748,11 +804,41 @@ class PropertyLineDialog(object):
 
         lines = ["{0} table(s), {1} point(s) total.".format(
             len(self.selected_indices), total_points)]
+        lines.extend(self._coordinate_check_lines())
         if too_small:
             lines.append("Needs at least {0} points per table - too few in: {1}".format(
                 min_needed, ", ".join(too_small)))
         self.preview_text.Text = "\n".join(lines)
         self.btn_apply.IsEnabled = not too_small
+
+    def _coordinate_check_lines(self):
+        """Prove the shared-coordinate conversion against Revit itself.
+
+        Take the first point that is about to be drawn, convert it, and ask
+        Revit to report the shared coordinates of where it landed. If they do
+        not come back as the number in the spreadsheet, the boundary is going
+        in the wrong place and the user gets told before anything is drawn -
+        rather than after, by looking at it."""
+        if self.coord_mode != COORD_SHARED:
+            return ["Using the file's numbers as internal coordinates, "
+                    "unconverted."]
+        if self.mapping is None:
+            return []
+
+        table = self.tables[self.selected_indices[0]]
+        label, easting_raw, northing_raw = table['points'][0]
+        easting_ft = to_internal(easting_raw, self.unit)
+        northing_ft = to_internal(northing_raw, self.unit)
+
+        error_ft = roundtrip_error_ft(self.mapping, easting_ft, northing_ft)
+        if error_ft is None:
+            return ["Could not verify the conversion against Revit."]
+        if error_ft > to_internal(DUP_TOL_MM, UNIT_MM):
+            return ["WARNING: {0} would land {1} mm away from its stated "
+                    "coordinates. Do not use this result.".format(
+                        label, int(round(ft_to_mm(error_ft))))]
+        return ["Checked: {0} lands where Revit reports E {1}, N {2} - "
+                "matching the file.".format(label, easting_raw, northing_raw)]
 
     # -- events -----------------------------------------------------------------
     def _on_apply(self, sender, args):
@@ -801,9 +887,9 @@ def run():
     levels = list(DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements())
     levels.sort(key=lambda level: level.Elevation)
 
-    shared_components = get_shared_to_internal_components()
+    mapping = get_shared_to_internal()
 
-    dialog = PropertyLineDialog(filepath, tables, levels, shared_components)
+    dialog = PropertyLineDialog(filepath, tables, levels, mapping)
     if not dialog.show():
         return
 
@@ -823,7 +909,7 @@ def run():
             transaction.Start()
             try:
                 points_ft = build_points_ft(table, unit, coord_mode, elevation_ft,
-                                            dialog.shared_components)
+                                            dialog.mapping)
                 cleaned, dropped = dedupe_consecutive(points_ft, close_loop)
                 min_needed = 3 if close_loop else 2
                 if len(cleaned) < min_needed:

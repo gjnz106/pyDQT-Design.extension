@@ -17,10 +17,14 @@ tooltip: >
   - Tick which table(s) to draw - one closed Model Line loop per table,
     so several boundaries from one file (e.g. working limit + jetty
     limits) can be drawn in one go
-  - Choose whether the X/Y values are Shared/Survey coordinates
-    (converted through the project's Survey Point, e.g. SVY21 easting/
-    northing) or already Internal/Project coordinates, the input unit,
-    and which Level to flatten the boundary onto
+  - Choose whether the X/Y values are Shared/Survey coordinates (e.g.
+    SVY21 easting/northing) or already Internal/Project coordinates, the
+    input unit, and which Level to flatten the boundary onto
+  - In Shared mode the conversion is measured from the model through
+    Revit's own Report Shared Coordinates, so it follows whatever the
+    project acquired or published, rotation included. Before drawing,
+    the dialog converts the first point and asks Revit to report it
+    back - if it does not match the spreadsheet, it says so
 
   Note: Revit's own Property Line object cannot be created through its
   public API on any supported version, so this draws Model Lines, not a
