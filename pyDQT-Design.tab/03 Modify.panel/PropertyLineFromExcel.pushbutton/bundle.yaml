@@ -26,10 +26,11 @@ tooltip: >
     the dialog converts the first point and asks Revit to report it
     back - if it does not match the spreadsheet, it says so
   - Optionally, also place a family instance at every point - pick any
-    loaded annotation-style family type (point-based, not hosted) and
-    which plan/section/elevation/drafting view to place it in. A "Mark"
-    parameter, if the type has one, is filled in with the point's label
-    (e.g. WL1) as a best-effort extra, not required for placement
+    loaded Generic Annotation family type (a point-marker symbol, not a
+    hosted/model family or a built-in symbol like a callout/section head)
+    and which plan/section/elevation/drafting view to place it in. A
+    "Mark" parameter, if the type has one, is filled in with the point's
+    label (e.g. WL1) as a best-effort extra, not required for placement
 
   Note: Revit's own Property Line object cannot be created through its
   public API on any supported version, so this draws Model Lines, not a
