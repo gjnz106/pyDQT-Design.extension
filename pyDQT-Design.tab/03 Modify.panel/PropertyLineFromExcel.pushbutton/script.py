@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Property Line from Excel v1.4 - DQT
+Property Line from Excel v1.5 - DQT
 Draws a closed loop of Model Lines - a boundary - from Easting/Northing
 (or plain X/Y) coordinate tables found in an .xlsx file. A header shared
 by several boundaries listed back-to-back with no separating row (e.g.
 WL1..WL8 immediately followed by LB1..LB30) is split one boundary per
 label prefix, rather than looped through as a single bogus shape.
-Optionally also places a user-picked annotation family instance at every
-point (e.g. a survey point marker), in a view the user picks.
+Optionally also places a user-picked Generic Annotation family instance
+at every point (e.g. a survey point marker), in a view the user picks.
 
 Revit's own PropertyLine element cannot be created through the public
 API (Document.Create has no NewPropertyLine method, and PropertyLine has
@@ -491,35 +491,76 @@ def create_model_lines(points_ft, closed, elevation_ft):
 
 
 # ==============================================================================
-# POINT MARKERS - an annotation symbol placed at each point, user-selected.
+# POINT MARKERS - a Generic Annotation symbol placed at each point, user-
+# selected.
 #
 # Document.Create.NewFamilyInstance(XYZ, FamilySymbol, View) is the documented
-# overload for 2D, view-based families (detail components, annotation symbols,
-# titleblocks); it needs a symbol whose Family.FamilyPlacementType is
-# ViewBased, and a non-3D view to place into - unlike NewPropertyLine, this one
-# is real, current API. The XYZ is the same internal point used for the line
-# vertices, so a marker only lands where expected in a plan view of the same
-# Level chosen to flatten the boundary onto.
+# overload for 2D, view-based families; unlike NewPropertyLine, this one is
+# real, current API. But FamilyPlacementType.ViewBased on its own is too broad
+# a filter - it also matches Revit's built-in system annotation symbols
+# (callout heads, section heads, elevation marks, grid/level heads, spot
+# symbols, ...), which are not meant to be hand-placed this way and do not
+# reliably report a usable family/type name. Generic Annotation
+# (BuiltInCategory.OST_GenericAnnotation) is the category loadable point-
+# marker families actually belong to, so that is the primary filter; ViewBased
+# is kept as a second, independent check.
+#
+# The XYZ used is the same internal point used for the line vertices, so a
+# marker only lands where expected in a plan view of the same Level chosen to
+# flatten the boundary onto.
 # ==============================================================================
-def is_annotation_symbol(symbol):
+try:
+    GENERIC_ANNOTATION_CATEGORY_ID = DB.ElementId(DB.BuiltInCategory.OST_GenericAnnotation)
+except Exception:
+    GENERIC_ANNOTATION_CATEGORY_ID = None
+
+
+def is_generic_annotation_symbol(symbol):
     try:
-        return symbol.Family.FamilyPlacementType == DB.FamilyPlacementType.ViewBased
+        is_view_based = symbol.Family.FamilyPlacementType == DB.FamilyPlacementType.ViewBased
     except Exception:
-        return False
+        is_view_based = False
+    try:
+        is_generic_annotation = (GENERIC_ANNOTATION_CATEGORY_ID is not None and
+                                 symbol.Category is not None and
+                                 symbol.Category.Id == GENERIC_ANNOTATION_CATEGORY_ID)
+    except Exception:
+        is_generic_annotation = False
+    return is_view_based and is_generic_annotation
 
 
 def symbol_label(symbol):
+    """'Family: Type', looking the two names up independently so a failure on
+    one side does not hide a perfectly good name on the other."""
+    family_name = None
     try:
-        return "{0}: {1}".format(symbol.Family.Name, symbol.Name)
+        family_name = symbol.Family.Name
     except Exception:
-        return str(getattr(symbol, "Name", "Family Type"))
+        pass
+    type_name = None
+    try:
+        type_name = symbol.Name
+    except Exception:
+        pass
+
+    if family_name and type_name:
+        return "{0}: {1}".format(family_name, type_name)
+    if type_name:
+        return type_name
+    if family_name:
+        return family_name
+    try:
+        return "(unnamed type, id {0})".format(symbol.Id)
+    except Exception:
+        return "(unnamed type)"
 
 
 def get_annotation_symbols():
-    """[(display_name, FamilySymbol), ...], sorted, for every loaded family
-    type that can be placed with NewFamilyInstance(XYZ, FamilySymbol, View)."""
+    """[(display_name, FamilySymbol), ...], sorted, for every loaded Generic
+    Annotation family type - the point-marker symbols this tool can place
+    with NewFamilyInstance(XYZ, FamilySymbol, View)."""
     symbols = [s for s in DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol)
-               if is_annotation_symbol(s)]
+               if is_generic_annotation_symbol(s)]
     pairs = [(symbol_label(s), s) for s in symbols]
     pairs.sort(key=lambda pair: pair[0])
     return pairs
@@ -883,7 +924,7 @@ class PropertyLineDialog(object):
 
         if not self.symbols:
             self.marker_warning.Text = (
-                "No point/annotation-style family is loaded in this project "
+                "No Generic Annotation family is loaded in this project "
                 "(Insert > Load Family) - markers cannot be placed.")
             self.chk_markers.IsEnabled = False
         elif not self.marker_views:
