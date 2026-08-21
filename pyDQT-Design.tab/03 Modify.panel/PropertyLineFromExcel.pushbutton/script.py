@@ -472,8 +472,9 @@ XAML_MAIN = """
       <Setter Property="Foreground" Value="#5D4E37"/>
       <Setter Property="BorderBrush" Value="#D4B87A"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Padding" Value="18,7"/>
-      <Setter Property="Margin" Value="4,0,0,0"/>
+      <Setter Property="Padding" Value="27,11"/>
+      <Setter Property="Margin" Value="6,0,0,0"/>
+      <Setter Property="FontSize" Value="18"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
