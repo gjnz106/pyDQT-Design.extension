@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Property Line from Excel v1.3 - DQT
+Property Line from Excel v1.4 - DQT
 Draws a closed loop of Model Lines - a boundary - from Easting/Northing
 (or plain X/Y) coordinate tables found in an .xlsx file. A header shared
 by several boundaries listed back-to-back with no separating row (e.g.
 WL1..WL8 immediately followed by LB1..LB30) is split one boundary per
 label prefix, rather than looped through as a single bogus shape.
+Optionally also places a user-picked annotation family instance at every
+point (e.g. a survey point marker), in a view the user picks.
 
 Revit's own PropertyLine element cannot be created through the public
 API (Document.Create has no NewPropertyLine method, and PropertyLine has
@@ -489,6 +491,91 @@ def create_model_lines(points_ft, closed, elevation_ft):
 
 
 # ==============================================================================
+# POINT MARKERS - an annotation symbol placed at each point, user-selected.
+#
+# Document.Create.NewFamilyInstance(XYZ, FamilySymbol, View) is the documented
+# overload for 2D, view-based families (detail components, annotation symbols,
+# titleblocks); it needs a symbol whose Family.FamilyPlacementType is
+# ViewBased, and a non-3D view to place into - unlike NewPropertyLine, this one
+# is real, current API. The XYZ is the same internal point used for the line
+# vertices, so a marker only lands where expected in a plan view of the same
+# Level chosen to flatten the boundary onto.
+# ==============================================================================
+def is_annotation_symbol(symbol):
+    try:
+        return symbol.Family.FamilyPlacementType == DB.FamilyPlacementType.ViewBased
+    except Exception:
+        return False
+
+
+def symbol_label(symbol):
+    try:
+        return "{0}: {1}".format(symbol.Family.Name, symbol.Name)
+    except Exception:
+        return str(getattr(symbol, "Name", "Family Type"))
+
+
+def get_annotation_symbols():
+    """[(display_name, FamilySymbol), ...], sorted, for every loaded family
+    type that can be placed with NewFamilyInstance(XYZ, FamilySymbol, View)."""
+    symbols = [s for s in DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol)
+               if is_annotation_symbol(s)]
+    pairs = [(symbol_label(s), s) for s in symbols]
+    pairs.sort(key=lambda pair: pair[0])
+    return pairs
+
+
+PLACEMENT_VIEW_TYPES = set([
+    "FloorPlan", "CeilingPlan", "Elevation", "Section", "Detail",
+    "DraftingView", "EngineeringPlan", "AreaPlan",
+])
+
+
+def is_placement_view(view):
+    try:
+        return (not view.IsTemplate) and str(view.ViewType) in PLACEMENT_VIEW_TYPES
+    except Exception:
+        return False
+
+
+def view_label(view):
+    try:
+        return "{0}  [{1}]".format(view.Name, view.ViewType)
+    except Exception:
+        return str(getattr(view, "Name", "View"))
+
+
+def get_placement_views():
+    """[(display_name, View), ...], sorted, for every view a point marker can
+    be placed into."""
+    views = [v for v in DB.FilteredElementCollector(doc).OfClass(DB.View).ToElements()
+             if is_placement_view(v)]
+    pairs = [(view_label(v), v) for v in views]
+    pairs.sort(key=lambda pair: pair[0])
+    return pairs
+
+
+def place_markers(points_ft, symbol, view):
+    """One family instance per point. Best-effort: if the type carries a
+    'Mark' parameter, the point's label is written into it, but a marker is
+    still placed even where that fails."""
+    if not symbol.IsActive:
+        symbol.Activate()
+        doc.Regenerate()
+    created = 0
+    for label, x, y, z in points_ft:
+        instance = doc.Create.NewFamilyInstance(DB.XYZ(x, y, z), symbol, view)
+        try:
+            mark = instance.LookupParameter("Mark")
+            if mark is not None and not mark.IsReadOnly:
+                mark.Set(label)
+        except Exception:
+            pass
+        created += 1
+    return created
+
+
+# ==============================================================================
 # FILE PICKING
 # ==============================================================================
 def pick_excel_file():
@@ -517,7 +604,7 @@ XAML_MAIN = """
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Property Line from Excel - DQT"
-        Width="560" Height="720"
+        Width="560" Height="800"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         Background="#FFFFFF">
@@ -652,6 +739,27 @@ XAML_MAIN = """
           </StackPanel>
         </Grid>
 
+        <TextBlock Text="Point markers (optional)" Style="{StaticResource SectionLabel}"/>
+        <CheckBox x:Name="ChkMarkers" Style="{StaticResource DqtCheck}"
+                  Content="Also place a family instance at each point"/>
+        <Grid x:Name="MarkerGrid" Margin="0,8,0,0" IsEnabled="False">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0">
+            <TextBlock Text="Family type" Foreground="#5D4E37" FontSize="11"/>
+            <ComboBox x:Name="CmbSymbol" Height="26" FontSize="12" Margin="0,3,0,0"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Text="Place in view" Foreground="#5D4E37" FontSize="11"/>
+            <ComboBox x:Name="CmbView" Height="26" FontSize="12" Margin="0,3,0,0"/>
+          </StackPanel>
+        </Grid>
+        <TextBlock x:Name="MarkerWarning" Foreground="#B03A2E" FontSize="11"
+                   Margin="0,4,0,0" TextWrapping="Wrap"/>
+
         <Border x:Name="PreviewBorder" Background="#FAF3E0"
                 BorderBrush="#D4B87A" BorderThickness="1"
                 CornerRadius="4" Padding="10,8" Margin="0,14,0,0">
@@ -699,6 +807,9 @@ class PropertyLineDialog(object):
         self.close_loop = True
         self.selected_indices = []
         self.selected_level = levels[0] if levels else None
+        self.place_markers = False
+        self.selected_symbol = None
+        self.selected_view = None
 
         stream = MemoryStream(Encoding.UTF8.GetBytes(XAML_MAIN))
         self.window = XamlReader.Load(stream)
@@ -713,6 +824,11 @@ class PropertyLineDialog(object):
         self.rb_unit_ft = self.window.FindName("RbUnitFt")
         self.cmb_level = self.window.FindName("CmbLevel")
         self.chk_close = self.window.FindName("ChkClose")
+        self.chk_markers = self.window.FindName("ChkMarkers")
+        self.marker_grid = self.window.FindName("MarkerGrid")
+        self.cmb_symbol = self.window.FindName("CmbSymbol")
+        self.cmb_view = self.window.FindName("CmbView")
+        self.marker_warning = self.window.FindName("MarkerWarning")
         self.preview_text = self.window.FindName("PreviewText")
         self.btn_apply = self.window.FindName("BtnApply")
         self.btn_cancel = self.window.FindName("BtnCancel")
@@ -738,6 +854,44 @@ class PropertyLineDialog(object):
         if levels:
             self.cmb_level.SelectedIndex = 0
 
+        self.symbols = get_annotation_symbols()
+        for name, symbol in self.symbols:
+            item = ComboBoxItem()
+            item.Content = name
+            item.Tag = symbol
+            self.cmb_symbol.Items.Add(item)
+        if self.symbols:
+            self.cmb_symbol.SelectedIndex = 0
+
+        self.marker_views = get_placement_views()
+        active_index = 0
+        try:
+            active_id = uidoc.ActiveView.Id
+            for i, (_name, view) in enumerate(self.marker_views):
+                if view.Id == active_id:
+                    active_index = i
+                    break
+        except Exception:
+            pass
+        for name, view in self.marker_views:
+            item = ComboBoxItem()
+            item.Content = name
+            item.Tag = view
+            self.cmb_view.Items.Add(item)
+        if self.marker_views:
+            self.cmb_view.SelectedIndex = active_index
+
+        if not self.symbols:
+            self.marker_warning.Text = (
+                "No point/annotation-style family is loaded in this project "
+                "(Insert > Load Family) - markers cannot be placed.")
+            self.chk_markers.IsEnabled = False
+        elif not self.marker_views:
+            self.marker_warning.Text = (
+                "No plan/section/elevation/drafting view is available to "
+                "place markers into.")
+            self.chk_markers.IsEnabled = False
+
         if mapping is None:
             self.transform_warning.Text = (
                 "Could not read this project's shared-coordinate position - "
@@ -759,6 +913,10 @@ class PropertyLineDialog(object):
         self.cmb_level.SelectionChanged += self._on_options_changed
         self.chk_close.Checked += self._on_options_changed
         self.chk_close.Unchecked += self._on_options_changed
+        self.chk_markers.Checked += self._on_markers_changed
+        self.chk_markers.Unchecked += self._on_markers_changed
+        self.cmb_symbol.SelectionChanged += self._on_options_changed
+        self.cmb_view.SelectionChanged += self._on_options_changed
         self.btn_apply.Click += self._on_apply
         self.btn_cancel.Click += self._on_cancel
 
@@ -774,6 +932,10 @@ class PropertyLineDialog(object):
         except Exception:
             pass
 
+    def _on_markers_changed(self, sender, args):
+        self.marker_grid.IsEnabled = bool(self.chk_markers.IsChecked)
+        self._on_options_changed(sender, args)
+
     def _refresh(self):
         self.coord_mode = COORD_SHARED if self.rb_shared.IsChecked else COORD_INTERNAL
         if self.rb_unit_mm.IsChecked:
@@ -788,12 +950,22 @@ class PropertyLineDialog(object):
         item = self.cmb_level.SelectedItem
         self.selected_level = item.Tag if item is not None else None
 
+        self.place_markers = bool(self.chk_markers.IsChecked)
+        symbol_item = self.cmb_symbol.SelectedItem
+        self.selected_symbol = symbol_item.Tag if symbol_item is not None else None
+        view_item = self.cmb_view.SelectedItem
+        self.selected_view = view_item.Tag if view_item is not None else None
+
         if not self.levels:
             self.preview_text.Text = "This project has no Levels - add one first."
             self.btn_apply.IsEnabled = False
             return
         if not self.selected_indices:
             self.preview_text.Text = "Tick at least one table."
+            self.btn_apply.IsEnabled = False
+            return
+        if self.place_markers and (self.selected_symbol is None or self.selected_view is None):
+            self.preview_text.Text = "Pick a family type and a view for the point markers."
             self.btn_apply.IsEnabled = False
             return
 
@@ -805,6 +977,9 @@ class PropertyLineDialog(object):
         lines = ["{0} table(s), {1} point(s) total.".format(
             len(self.selected_indices), total_points)]
         lines.extend(self._coordinate_check_lines())
+        if self.place_markers:
+            lines.append("A marker will also be placed at every point (before "
+                         "duplicate removal for the loop).")
         if too_small:
             lines.append("Needs at least {0} points per table - too few in: {1}".format(
                 min_needed, ", ".join(too_small)))
@@ -898,6 +1073,9 @@ def run():
     close_loop = dialog.close_loop
     elevation_ft = dialog.selected_level.Elevation
     selected_tables = [tables[i] for i in dialog.selected_indices]
+    place_markers_on = dialog.place_markers
+    marker_symbol = dialog.selected_symbol
+    marker_view = dialog.selected_view
 
     results = []
     ok_any = False
@@ -919,6 +1097,11 @@ def run():
 
                 count = create_model_lines(cleaned, close_loop, elevation_ft)
                 made = "{0} Model Line segment(s)".format(count)
+
+                if place_markers_on:
+                    marker_points, _marker_dropped = dedupe_consecutive(points_ft, False)
+                    marker_count = place_markers(marker_points, marker_symbol, marker_view)
+                    made += ", {0} marker(s)".format(marker_count)
 
                 transaction.Commit()
                 ok_any = True
