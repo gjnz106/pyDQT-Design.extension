@@ -1,0 +1,22 @@
+title: "InPlace\nVolume"
+author: Dang Quoc Truong (DQT)
+name: InPlaceVolume
+tooltip: >
+  Write the computed volume of every In-Place family instance into a
+  parameter you choose - e.g. for rock armour / precast unit BOQ takeoff.
+
+  Workflow:
+  - If you have elements selected, only the In-Place ones among them are
+    used; otherwise every In-Place instance in the document is used
+  - Search and pick the target instance parameter
+  - Click Write Volume
+
+  Volume is computed per instance, tried in order:
+  - Revit's own computed volume (Floor/Wall/Foundation-style in-place
+    families that expose one)
+  - The sum of GetMaterialVolume() across every material on the element -
+    handles a multi-material, multi-solid in-place model correctly (the
+    same API Material Takeoff schedules use)
+  - A raw sum of every solid in the element's geometry, as a last resort
+
+  Copyright (c) 2026 Dang Quoc Truong (DQT)
