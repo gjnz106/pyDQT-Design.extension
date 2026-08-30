@@ -2,6 +2,5 @@ title: "Views & Sheets"
 layout:
   - ViewManager_Advanced
   - SheetManager_Advanced
-  - ViewTemplate
   - Linked Element Box
   - Sheet re-number
