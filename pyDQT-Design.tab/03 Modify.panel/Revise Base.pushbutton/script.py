@@ -2,7 +2,8 @@
 """Revise Base
 Change the base level / reference level of many elements at once and keep their
 position by compensating the offset.
-Supports: Walls, Floors, Columns, Structural Columns, Beams, Structural Framing
+Supports: Walls, Floors, Columns, Structural Columns, Beams, Structural Framing,
+Doors, Windows
 
 Copyright (c) 2025 by Dang Quoc Truong (DQT)
 """
@@ -12,7 +13,12 @@ __author__ = "DQT"
 __doc__ = """Change the base/reference level of selected elements and keep their
 absolute position by adjusting the offset automatically.
 
-Supports: Walls, Floors, Columns, Structural Columns, Beams, Structural Framing
+Supports: Walls, Floors, Columns, Structural Columns, Beams, Structural Framing,
+Doors, Windows
+
+For Doors/Windows, "Level" (Schedule Level) and "Sill Height" stand in for
+Base Constraint/Offset - a hosted door or window whose family/type has no
+Sill Height parameter is reported as failed rather than silently skipped.
 
 Usage:
 1. Select elements to revise
@@ -65,6 +71,12 @@ def is_beam(elem):
         return False
     return _cat_bic(elem) == BuiltInCategory.OST_StructuralFraming
 
+def is_door_or_window(elem):
+    """Check if element is a Door or Window family instance"""
+    if not isinstance(elem, FamilyInstance):
+        return False
+    return _cat_bic(elem) in (BuiltInCategory.OST_Doors, BuiltInCategory.OST_Windows)
+
 def get_element_type_name(elem):
     """Get element type name safely"""
     try:
@@ -86,7 +98,7 @@ def get_element_category_name(elem):
 
 def get_element_base_info(elem):
     """Get element's current base constraint and offset information
-    Works for Wall, Floor, Column, and Beam (Structural Framing)"""
+    Works for Wall, Floor, Column, Beam (Structural Framing), Door, Window"""
     try:
         base_constraint_param = None
         base_offset_param = None
@@ -110,7 +122,17 @@ def get_element_base_info(elem):
         elif is_beam(elem):
             base_constraint_param = elem.get_Parameter(BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM)
             base_offset_param = elem.get_Parameter(BuiltInParameter.STRUCTURAL_BEAM_END0_ELEVATION)
-        
+
+        # Door / Window: hosted instances don't have a Base Constraint of
+        # their own - "Level" (Schedule Level) plays that role, and "Sill
+        # Height" is the offset from it that actually positions the opening
+        # vertically within its host. If a particular family/host doesn't
+        # expose one of these (e.g. many door types have no Sill Height),
+        # the generic None-check below skips it rather than guessing.
+        elif is_door_or_window(elem):
+            base_constraint_param = elem.get_Parameter(BuiltInParameter.INSTANCE_SCHEDULE_ONLY_LEVEL_PARAM)
+            base_offset_param = elem.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM)
+
         else:
             return None, None, None
         
@@ -135,7 +157,7 @@ def get_element_base_info(elem):
 
 def adjust_element_base_constraint(elem, new_level):
     """Adjust element's base constraint and offset to maintain position
-    Works for Wall, Floor, Column, and Beam (Structural Framing)"""
+    Works for Wall, Floor, Column, Beam (Structural Framing), Door, Window"""
     try:
         # Get current base information
         current_level, current_offset, actual_elevation = get_element_base_info(elem)
@@ -182,7 +204,13 @@ def adjust_element_base_constraint(elem, new_level):
         elif is_beam(elem):
             base_constraint_param = elem.get_Parameter(BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM)
             base_offset_param = elem.get_Parameter(BuiltInParameter.STRUCTURAL_BEAM_END0_ELEVATION)
-        
+
+        # Door / Window - see the matching branch in get_element_base_info
+        # for why Level + Sill Height stand in for Base Constraint + Offset.
+        elif is_door_or_window(elem):
+            base_constraint_param = elem.get_Parameter(BuiltInParameter.INSTANCE_SCHEDULE_ONLY_LEVEL_PARAM)
+            base_offset_param = elem.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM)
+
         if not base_constraint_param or not base_offset_param:
             print("Cannot access element parameters: {}".format(elem.Id))
             return False
@@ -210,7 +238,7 @@ def main():
             # Filter selected elements to get only walls, floors, columns, beams
             for elem_id in selection:
                 elem = doc.GetElement(elem_id)
-                if isinstance(elem, (Wall, Floor)) or is_column(elem) or is_beam(elem):
+                if isinstance(elem, (Wall, Floor)) or is_column(elem) or is_beam(elem) or is_door_or_window(elem):
                     elements.append(elem)
         
         if not elements:
@@ -220,7 +248,7 @@ def main():
                 
                 class ElementSelectionFilter(ISelectionFilter):
                     def AllowElement(self, elem):
-                        return isinstance(elem, (Wall, Floor)) or is_column(elem) or is_beam(elem)
+                        return isinstance(elem, (Wall, Floor)) or is_column(elem) or is_beam(elem) or is_door_or_window(elem)
                     
                     def AllowReference(self, reference, position):
                         return False
@@ -228,7 +256,7 @@ def main():
                 refs = uidoc.Selection.PickObjects(
                     ObjectType.Element,
                     ElementSelectionFilter(),
-                    "Select elements to adjust Base Constraint (Walls, Floors, Columns, Beams)"
+                    "Select elements to adjust Base Constraint (Walls, Floors, Columns, Beams, Doors, Windows)"
                 )
                 
                 elements = [doc.GetElement(ref.ElementId) for ref in refs]
