@@ -42,18 +42,18 @@ try:
     # Step 1: pick an element inside a linked model
     linked_ref = uidoc.Selection.PickObject(
         UI.Selection.ObjectType.LinkedElement,
-        "Chọn đối tượng trong Linked Model")
+        "Pick an element in the linked model")
     link_instance = doc.GetElement(linked_ref.ElementId)
 
     if not isinstance(link_instance, DB.RevitLinkInstance):
-        UI.TaskDialog.Show("Lỗi", "Đối tượng được chọn không phải là RevitLinkInstance.")
+        UI.TaskDialog.Show("Error", "The selected object is not a RevitLinkInstance.")
     else:
         link_doc = link_instance.GetLinkDocument()
         linked_element = link_doc.GetElement(linked_ref.LinkedElementId)
 
         bbox = linked_element.get_BoundingBox(None)
         if not bbox:
-            UI.TaskDialog.Show("Lỗi", "Không thể lấy BoundingBox của đối tượng.")
+            UI.TaskDialog.Show("Error", "Could not get the BoundingBox of the element.")
         else:
             # Step 2: transform all 8 corners to host coords so a rotated link
             # still yields a valid axis-aligned box.
@@ -80,7 +80,7 @@ try:
                 if target_view is None:
                     vft = _first_3d_view_type()
                     if vft is None:
-                        raise Exception("Không tìm thấy View Family Type 3D.")
+                        raise Exception("Could not find a 3D View Family Type.")
                     target_view = DB.View3D.CreateIsometric(doc, vft.Id)
                     created = True
                     try:
@@ -96,12 +96,12 @@ try:
             # Activate after the transaction is closed
             uidoc.ActiveView = target_view
 
-            msg = "Đã gán Section Box vào view 3D riêng của bạn:\n{}".format(
+            msg = "Section Box applied to your own 3D view:\n{}".format(
                 target_view.Name)
             if created:
-                msg += "\n(View mới được tạo cho user: {})".format(
+                msg += "\n(New view created for user: {})".format(
                     doc.Application.Username)
-            UI.TaskDialog.Show("Thành công", msg)
+            UI.TaskDialog.Show("Success", msg)
 
 except Exception as e:
-    UI.TaskDialog.Show("Lỗi", "Không thể thực hiện: {}".format(str(e)))
+    UI.TaskDialog.Show("Error", "Could not complete: {}".format(str(e)))

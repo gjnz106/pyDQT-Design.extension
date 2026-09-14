@@ -1,51 +1,51 @@
 # Text to Element Transfer Tool
 
-Công cụ PyRevit để transfer giá trị từ Text Notes vào các element khi text giao với element đó.
+A PyRevit tool that transfers values from Text Notes into elements wherever a text note overlaps that element.
 
-## Mô tả
+## Description
 
-Tool này giúp tự động hóa việc gán thông tin từ annotation (Text Notes) vào các model elements hoặc detail components dựa trên vị trí giao nhau của chúng trong view.
+This tool automates assigning information from annotations (Text Notes) to model elements or detail components, based on where they overlap in the view.
 
-## Có 2 phiên bản
+## Two versions
 
 ### 1. Full Version (`text_to_element_transfer/`)
 
-Phiên bản đầy đủ với giao diện WPF:
+The full version with a WPF UI:
 
-**Tính năng:**
-- Giao diện đồ họa theo style pyDQT (yellow-orange theme)
-- Chọn text notes bằng cách pick từ model hoặc lấy tất cả trong view
-- Chọn category đích (Walls, Floors, Rooms, Doors, etc.)
-- Chọn parameter đích (Comments, Mark, Description, etc.) hoặc nhập custom parameter
-- Điều chỉnh tolerance cho intersection detection
-- Preview trước khi transfer
-- Hiển thị kết quả chi tiết
+**Features:**
+- Graphical interface in the pyDQT style (yellow-orange theme)
+- Pick text notes from the model, or grab every one in the view
+- Choose the target category (Walls, Floors, Rooms, Doors, etc.)
+- Choose the target parameter (Comments, Mark, Description, etc.) or enter a custom parameter
+- Adjustable tolerance for intersection detection
+- Preview before transferring
+- Detailed result reporting
 
 **Workflow:**
-1. Step 1: Chọn Text Notes
-2. Step 2: Chọn Category của elements đích
-3. Step 3: Chọn Parameter để ghi vào
-4. Step 4: Preview và Transfer
+1. Step 1: Select Text Notes
+2. Step 2: Select the target elements' Category
+3. Step 3: Select the Parameter to write into
+4. Step 4: Preview and Transfer
 
 ### 2. Quick Version (`text_to_element_transfer_quick/`)
 
-Phiên bản nhanh, không cần WPF:
+A faster version, no WPF required:
 
-**Tính năng:**
-- Làm việc trực tiếp với selection
-- Tự động tìm elements giao với text notes
-- Chọn parameter từ danh sách có sẵn
-- Confirm trước khi transfer
+**Features:**
+- Works directly with the current selection
+- Automatically finds elements overlapping the text notes
+- Pick a parameter from a preset list
+- Confirms before transferring
 
 **Workflow:**
-1. Chọn text notes (và optionally các elements đích)
-2. Chạy script
-3. Chọn target parameter
-4. Confirm và transfer
+1. Select text notes (and optionally the target elements)
+2. Run the script
+3. Select the target parameter
+4. Confirm and transfer
 
-## Cài đặt
+## Installation
 
-1. Copy folder tool vào extension của bạn:
+1. Copy the tool folder into your extension:
 ```
 YourExtension.extension/
 └── YourTab.tab/
@@ -55,45 +55,45 @@ YourExtension.extension/
             └── bundle.yaml
 ```
 
-2. Reload PyRevit hoặc restart Revit
+2. Reload PyRevit or restart Revit
 
-## Cách sử dụng
+## Usage
 
-### Use Case 1: Gán tên phòng từ Text vào Room
-1. Tạo Text Notes với tên phòng đặt bên trong các Room boundaries
-2. Chạy tool
-3. Chọn category "Rooms"
-4. Chọn parameter "Comments" hoặc "Name"
+### Use Case 1: Assign a room name from Text to a Room
+1. Create Text Notes with the room name placed inside the Room boundaries
+2. Run the tool
+3. Select the "Rooms" category
+4. Select the "Comments" or "Name" parameter
 5. Transfer
 
-### Use Case 2: Gán mã chi tiết từ Text vào Detail Items
-1. Tạo Text Notes với mã detail đặt gần các Detail Components
-2. Chạy tool
-3. Chọn category "Detail Items"
-4. Chọn parameter "Mark"
+### Use Case 2: Assign a detail code from Text to Detail Items
+1. Create Text Notes with the detail code placed near the Detail Components
+2. Run the tool
+3. Select the "Detail Items" category
+4. Select the "Mark" parameter
 5. Transfer
 
-### Use Case 3: Gán thông tin từ Text vào Walls
-1. Chọn các Text Notes có nội dung cần transfer
-2. Chạy tool
-3. Chọn category "Walls"
-4. Nhập custom parameter name
+### Use Case 3: Assign information from Text to Walls
+1. Select the Text Notes whose content you want to transfer
+2. Run the tool
+3. Select the "Walls" category
+4. Enter a custom parameter name
 5. Transfer
 
-## Lưu ý kỹ thuật
+## Technical notes
 
 ### Intersection Detection
-- Tool sử dụng bounding box intersection để xác định text giao với element
-- Tolerance mặc định: 0.5 feet
-- Chỉ xét intersection trong 2D (X, Y) - phù hợp với plan views
+- The tool uses bounding box intersection to determine whether a text note overlaps an element
+- Default tolerance: 0.5 feet
+- Only checks intersection in 2D (X, Y) - suited to plan views
 
 ### Parameter Support
 - Instance parameters (Comments, Mark, etc.)
 - Built-in parameters (ALL_MODEL_INSTANCE_COMMENTS, ALL_MODEL_MARK)
 - Custom shared parameters
-- KHÔNG hỗ trợ read-only parameters hoặc type parameters
+- Does NOT support read-only parameters or type parameters
 
-### Categories hỗ trợ
+### Supported categories
 - Walls, Floors, Ceilings, Roofs
 - Rooms, Areas
 - Doors, Windows
@@ -106,36 +106,36 @@ YourExtension.extension/
 
 ```python
 # Core functions
-get_text_content(text_note)              # Lấy nội dung text
-get_text_note_bounding_box(text_note, view)  # Lấy bounding box
-boxes_intersect(bb1, bb2, tolerance)     # Kiểm tra intersection
-set_parameter_value(element, param, value)   # Gán giá trị parameter
+get_text_content(text_note)              # Get the text content
+get_text_note_bounding_box(text_note, view)  # Get the bounding box
+boxes_intersect(bb1, bb2, tolerance)     # Check for intersection
+set_parameter_value(element, param, value)   # Assign the parameter value
 ```
 
 ## Troubleshooting
 
 **"No intersections found"**
-- Đảm bảo text notes nằm chồng lên elements trong view hiện tại
-- Thử tăng tolerance trong Full version
-- Kiểm tra elements có visible trong view không
+- Make sure the text notes overlap the elements in the current view
+- Try increasing the tolerance in the Full version
+- Check whether the elements are visible in the view
 
 **"Parameter not found or read-only"**
-- Parameter có thể là read-only
-- Parameter không tồn tại trên element type đó
-- Thử parameter khác như "Comments"
+- The parameter may be read-only
+- The parameter may not exist on that element type
+- Try a different parameter such as "Comments"
 
 **"No target elements found"**
-- Chọn đúng category
-- Đảm bảo elements visible trong view
-- Một số categories có thể không có elements trong view
+- Select the correct category
+- Make sure the elements are visible in the view
+- Some categories may have no elements in the view
 
 ## Version History
 
 - v1.0: Initial release
-  - Full version với WPF UI
-  - Quick version cho workflow nhanh
-  - Support 17 categories
-  - Support custom parameters
+  - Full version with a WPF UI
+  - Quick version for a faster workflow
+  - Support for 17 categories
+  - Support for custom parameters
 
 ## Author
 
