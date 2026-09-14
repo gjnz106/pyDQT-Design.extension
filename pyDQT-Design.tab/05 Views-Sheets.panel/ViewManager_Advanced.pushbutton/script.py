@@ -654,7 +654,7 @@ class AdvancedViewManagerWindow(Window):
     def _create_title_header(self):
         """Create title header like Sheet Manager"""
         border = Border()
-        # Background màu cream nhạt hơn
+        # Lighter cream background
         bg_color = Color.FromArgb(255, 254, 248, 231)
         border.Background = SolidColorBrush(bg_color)
         border.Padding = Thickness(20, 12, 20, 8)
@@ -663,12 +663,12 @@ class AdvancedViewManagerWindow(Window):
         stack.Orientation = Orientation.Horizontal
         stack.VerticalAlignment = System.Windows.VerticalAlignment.Bottom
         
-        # Main title - màu gold nhạt như Sheet Manager
+        # Main title - light gold, matching Sheet Manager
         title = TextBlock()
         title.Text = "View Manager"
         title.FontSize = 32
         title.FontWeight = System.Windows.FontWeights.Normal
-        # Gold nhạt giống Sheet Manager
+        # Light gold, matching Sheet Manager
         gold_light = Color.FromArgb(255, 240, 204, 136)
         title.Foreground = SolidColorBrush(gold_light)
         
@@ -676,7 +676,7 @@ class AdvancedViewManagerWindow(Window):
         spacer = TextBlock()
         spacer.Text = "  "
         
-        # Version - nhỏ hơn, cùng baseline
+        # Version - smaller, same baseline
         version = TextBlock()
         version.Text = "v1.0.0"
         version.FontSize = 16
@@ -697,9 +697,9 @@ class AdvancedViewManagerWindow(Window):
         """Create summary cards panel like Sheet Manager"""
         main_stack = StackPanel()
         
-        # Subtitle bar - màu gold đậm
+        # Subtitle bar - dark gold
         subtitle_border = Border()
-        # Gold đậm giống Sheet Manager
+        # Dark gold, matching Sheet Manager
         gold_dark = Color.FromArgb(255, 218, 165, 32)  # Goldenrod
         subtitle_border.Background = SolidColorBrush(gold_dark)
         subtitle_border.Padding = Thickness(20, 10, 20, 10)
@@ -725,7 +725,7 @@ class AdvancedViewManagerWindow(Window):
         
         # Cards grid with proper background
         cards_border = Border()
-        # Background cream nhạt
+        # Light cream background
         cream = Color.FromArgb(255, 254, 248, 231)
         cards_border.Background = SolidColorBrush(cream)
         cards_border.Padding = Thickness(10, 10, 10, 10)
@@ -1113,7 +1113,7 @@ class AdvancedViewManagerWindow(Window):
     def _create_footer(self):
         """Create copyright footer - Sheet Manager exact style"""
         border = Border()
-        # Gold đậm như Sheet Manager
+        # Dark gold, matching Sheet Manager
         gold_dark = Color.FromArgb(255, 218, 165, 32)
         border.Background = SolidColorBrush(gold_dark)
         border.Padding = Thickness(20, 10, 20, 10)

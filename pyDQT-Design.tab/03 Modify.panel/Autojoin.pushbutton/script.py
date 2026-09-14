@@ -509,7 +509,7 @@ class AutoJoinWindow(Window):
         sp.Margin = Thickness(16, 12, 16, 4)
 
         self.cb_selection = CheckBox()
-        self.cb_selection.Content = "Chỉ element đã chọn ({})".format(
+        self.cb_selection.Content = "Selected elements only ({})".format(
             len(preselected_ids))
         self.cb_selection.VerticalAlignment = VerticalAlignment.Center
         self.cb_selection.Foreground = B("#444444")
@@ -690,9 +690,9 @@ class AutoJoinWindow(Window):
     def _validate_selection(self):
         if bool(self.cb_selection.IsChecked) and not preselected_ids:
             TaskDialog.Show("Auto Join",
-                            "Chế độ 'Chỉ element đã chọn' đang bật nhưng bạn "
-                            "chưa chọn element nào.\nHãy chọn element trước khi "
-                            "chạy, hoặc bỏ tích ô đó.")
+                            "'Selected elements only' is on, but you haven't "
+                            "selected any elements.\nSelect elements before "
+                            "running, or untick that checkbox.")
             return False
         return True
 
