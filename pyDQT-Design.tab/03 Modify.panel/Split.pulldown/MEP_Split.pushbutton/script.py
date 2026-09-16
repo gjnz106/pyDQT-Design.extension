@@ -34,7 +34,7 @@ import System
 from System.IO import MemoryStream
 from System.Text import Encoding
 from System.Windows.Markup import XamlReader
-from System.Windows import Window, Thickness, MessageBox, MessageBoxButton, MessageBoxImage
+from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
 from System.Windows.Controls import ComboBoxItem
 from System.Collections.Generic import List
 
@@ -104,33 +104,86 @@ def get_link_instances():
     return links
 
 
-# ── Wall geometry from the link, pre-transformed into host coordinates ──
-def get_wall_solids_in_host_coords(link_doc, link_transform):
-    """Return [(wall, [Solid in host coordinates]), ...] for every wall in
-    the linked document."""
-    opts = Options()
-    opts.ComputeReferences = False
-    opts.DetailLevel = DB.ViewDetailLevel.Coarse
+# ── Small geometry helpers ──────────────────────────────────────────────
+def _eid_key(eid):
+    """Hashable int key for an ElementId across Revit 2024-2027."""
+    try:
+        return eid.Value
+    except AttributeError:
+        return eid.IntegerValue
 
-    result = []
-    walls = FilteredElementCollector(link_doc).OfClass(DB.Wall).WhereElementIsNotElementType().ToElements()
-    for wall in walls:
+
+def _bbox_in_host(bb, link_transform):
+    """(lo, hi) coordinate tuples of a linked element's bounding box,
+    expressed in host coordinates."""
+    total = link_transform.Multiply(bb.Transform)
+    mn, mx = bb.Min, bb.Max
+    xs, ys, zs = [], [], []
+    for x in (mn.X, mx.X):
+        for y in (mn.Y, mx.Y):
+            for z in (mn.Z, mx.Z):
+                p = total.OfPoint(XYZ(x, y, z))
+                xs.append(p.X)
+                ys.append(p.Y)
+                zs.append(p.Z)
+    return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
+
+
+def _bbox_overlap(a_lo, a_hi, b_lo, b_hi, pad=0.05):
+    for i in range(3):
+        if a_lo[i] - pad > b_hi[i] or a_hi[i] + pad < b_lo[i]:
+            return False
+    return True
+
+
+# ── Wall geometry from the link ─────────────────────────────────────────
+def collect_wall_entries(link_doc, link_transform):
+    """[(wall_id, bbox_lo, bbox_hi), ...] for every wall in the link, in
+    host coordinates. Only the cheap bounding box is read here - solid
+    geometry is pulled later and only for walls a run actually reaches,
+    so a big link doesn't mean extracting every wall's geometry."""
+    entries = []
+    for wid in FilteredElementCollector(link_doc).OfClass(DB.Wall) \
+            .WhereElementIsNotElementType().ToElementIds():
         try:
-            geom = wall.get_Geometry(opts)
+            wall = link_doc.GetElement(wid)
+            if wall is None:
+                continue
+            bb = wall.get_BoundingBox(None)
+            if bb is None:
+                continue
+            lo, hi = _bbox_in_host(bb, link_transform)
         except Exception:
             continue
-        if geom is None:
-            continue
+        entries.append((wid, lo, hi))
+    return entries
+
+
+def get_wall_solids(link_doc, link_transform, wall_id, cache):
+    """Solid geometry of one linked wall in host coordinates, cached -
+    the same wall is normally crossed by several runs."""
+    key = _eid_key(wall_id)
+    if key in cache:
+        return cache[key]
+    solids = []
+    try:
+        wall = link_doc.GetElement(wall_id)
+        if wall is not None:
+            opts = Options()
+            opts.ComputeReferences = False
+            opts.DetailLevel = DB.ViewDetailLevel.Coarse
+            geom = wall.get_Geometry(opts)
+            if geom is not None:
+                for g in geom:
+                    if isinstance(g, DB.Solid) and g.Volume > 1e-6:
+                        try:
+                            solids.append(DB.SolidUtils.CreateTransformed(g, link_transform))
+                        except Exception:
+                            continue
+    except Exception:
         solids = []
-        for g in geom:
-            if isinstance(g, DB.Solid) and g.Volume > 1e-6:
-                try:
-                    solids.append(DB.SolidUtils.CreateTransformed(g, link_transform))
-                except Exception:
-                    continue
-        if solids:
-            result.append((wall, solids))
-    return result
+    cache[key] = solids
+    return solids
 
 
 # ── Break a single MEP curve element at a point ──────────────────────────
@@ -153,64 +206,181 @@ def break_mep_curve(document, element, point):
 
 
 # ── Find where a curve crosses any of the given wall solids ─────────────
-def find_break_points(curve, wall_solids):
-    """Return a sorted, de-duplicated list of (parameter, XYZ) points
-    where `curve` physically crosses one of the given wall solids - the
-    midpoint of each solid/curve intersection segment, projected exactly
-    onto `curve` (the transformed wall solid can carry tiny floating-point
-    noise that the raw midpoint doesn't fully cancel out) and kept clear
-    of the run's own endpoints."""
+def find_break_points(curve, solids):
+    """Return the points, ordered along `curve`, where it physically
+    crosses one of `solids` - the midpoint of each solid/curve
+    intersection segment, projected exactly onto `curve` (the transformed
+    wall solid carries tiny floating-point noise the raw midpoint doesn't
+    cancel out) and kept clear of the run's own endpoints."""
     p_start = curve.GetEndPoint(0)
     p_end = curve.GetEndPoint(1)
 
     candidates = []
     curve_opts = SolidCurveIntersectionOptions()
-    for wall, solids in wall_solids:
-        for solid in solids:
+    for solid in solids:
+        try:
+            inter = solid.IntersectWithCurve(curve, curve_opts)
+        except Exception:
+            continue
+        if inter is None:
+            continue
+        for i in range(inter.SegmentCount):
+            seg = inter.GetCurveSegment(i)
             try:
-                inter = solid.IntersectWithCurve(curve, curve_opts)
+                mid = seg.Evaluate(0.5, True)
+            except Exception:
+                p0, p1 = seg.GetEndPoint(0), seg.GetEndPoint(1)
+                mid = XYZ((p0.X + p1.X) / 2.0, (p0.Y + p1.Y) / 2.0, (p0.Z + p1.Z) / 2.0)
+            try:
+                proj = curve.Project(mid)
+                pt = proj.XYZPoint
+                param = proj.Parameter
             except Exception:
                 continue
-            if inter is None:
+            # A break right at (or a hair's-width from) the run's own
+            # end is a known way to crash Revit's native break-curve
+            # implementation instead of raising a catchable error.
+            if pt.DistanceTo(p_start) < END_CLEARANCE_FT or pt.DistanceTo(p_end) < END_CLEARANCE_FT:
                 continue
-            for i in range(inter.SegmentCount):
-                seg = inter.GetCurveSegment(i)
-                try:
-                    mid = seg.Evaluate(0.5, True)
-                except Exception:
-                    p0, p1 = seg.GetEndPoint(0), seg.GetEndPoint(1)
-                    mid = XYZ((p0.X + p1.X) / 2.0, (p0.Y + p1.Y) / 2.0, (p0.Z + p1.Z) / 2.0)
-                try:
-                    proj = curve.Project(mid)
-                    pt = proj.XYZPoint
-                    param = proj.Parameter
-                except Exception:
-                    continue
-                # A break right at (or a hair's-width from) the run's own
-                # end is a known way to crash Revit's native break-curve
-                # implementation instead of raising a catchable error.
-                if pt.DistanceTo(p_start) < END_CLEARANCE_FT or pt.DistanceTo(p_end) < END_CLEARANCE_FT:
-                    continue
-                candidates.append((param, pt))
+            candidates.append((param, pt))
 
     candidates.sort(key=lambda c: c[0])
-    deduped = []
+    ordered = []
+    last_param = None
     for param, pt in candidates:
-        if deduped and abs(param - deduped[-1][0]) < TOLERANCE_FT:
+        if last_param is not None and abs(param - last_param) < TOLERANCE_FT:
             continue
-        deduped.append((param, pt))
-    return deduped
+        ordered.append(pt)
+        last_param = param
+    return ordered
+
+
+def validated_break_point(element, point):
+    """Re-check a planned point against the element as it stands right
+    now, immediately before the break. It must still lie on this
+    element's own curve and stay clear of both ends - after an earlier
+    break the element is shorter, so a later planned point may no longer
+    belong to it. Handing Revit's native break API a point that is off
+    the curve or on its endpoint is what takes the application down."""
+    try:
+        loc = element.Location
+        if not isinstance(loc, LocationCurve):
+            return None
+        curve = loc.Curve
+        if not isinstance(curve, Line):
+            return None
+        proj = curve.Project(point)
+        if proj is None:
+            return None
+        pt = proj.XYZPoint
+        # Project() clamps to the bounded curve, so a point that now sits
+        # beyond this piece comes back displaced - that's the rejection.
+        if pt.DistanceTo(point) > TOLERANCE_FT:
+            return None
+        if pt.DistanceTo(curve.GetEndPoint(0)) < END_CLEARANCE_FT:
+            return None
+        if pt.DistanceTo(curve.GetEndPoint(1)) < END_CLEARANCE_FT:
+            return None
+        return pt
+    except Exception:
+        return None
 
 
 # ── Collect target elements ──────────────────────────────────────────────
-def collect_target_elements(categories, view_only):
+def collect_target_element_ids(categories, view_only):
+    """ElementIds, never Element objects: the ids stay valid across the
+    document edits below, whereas an Element reference captured up front
+    goes stale the moment the document is modified and regenerated."""
     bics = List[BuiltInCategory](categories)
     if view_only:
         collector = FilteredElementCollector(doc, doc.ActiveView.Id)
     else:
         collector = FilteredElementCollector(doc)
     cat_filter = ElementMulticategoryFilter(bics)
-    return list(collector.WherePasses(cat_filter).WhereElementIsNotElementType().ToElements())
+    return list(collector.WherePasses(cat_filter).WhereElementIsNotElementType().ToElementIds())
+
+
+# ── Phase 1: work out every break, touching nothing ─────────────────────
+def plan_breaks(element_ids, wall_entries, link_doc, link_transform, report):
+    """Read-only pass. Returns [(element_id, [XYZ, ...]), ...] for the
+    runs that cross a linked wall. The document is not modified here, so
+    nothing can go stale mid-analysis, and each run is only intersected
+    against walls whose bounding box it actually reaches."""
+    solid_cache = {}
+    plan = []
+    for eid in element_ids:
+        try:
+            elem = doc.GetElement(eid)
+            if elem is None:
+                continue
+            loc = elem.Location
+            if not isinstance(loc, LocationCurve):
+                report['no_location'] += 1
+                continue
+            curve = loc.Curve
+            if not isinstance(curve, Line):
+                report['curved'] += 1
+                continue
+
+            p0 = curve.GetEndPoint(0)
+            p1 = curve.GetEndPoint(1)
+            run_lo = (min(p0.X, p1.X), min(p0.Y, p1.Y), min(p0.Z, p1.Z))
+            run_hi = (max(p0.X, p1.X), max(p0.Y, p1.Y), max(p0.Z, p1.Z))
+
+            near_solids = []
+            for wid, wlo, whi in wall_entries:
+                if _bbox_overlap(run_lo, run_hi, wlo, whi):
+                    near_solids.extend(
+                        get_wall_solids(link_doc, link_transform, wid, solid_cache))
+
+            points = find_break_points(curve, near_solids) if near_solids else []
+            if not points:
+                report['no_crossing'] += 1
+                continue
+            plan.append((eid, points))
+        except Exception:
+            report['errors'] += 1
+    return plan
+
+
+# ── Phase 2: apply the planned breaks ───────────────────────────────────
+def apply_breaks(plan, report):
+    """Write pass. Every element is re-fetched by id right before it is
+    touched, and each run's own sequence of breaks is atomic."""
+    for eid, points in plan:
+        sub = SubTransaction(doc)
+        sub.Start()
+        cuts = 0
+        unsupported = False
+        try:
+            current_id = eid
+            for pt in points:
+                elem = doc.GetElement(current_id)
+                if elem is None:
+                    break
+                safe_pt = validated_break_point(elem, pt)
+                if safe_pt is None:
+                    continue
+                try:
+                    new_id = break_mep_curve(doc, elem, safe_pt)
+                except UnsupportedMEPSplit:
+                    unsupported = True
+                    break
+                if new_id and new_id != ElementId.InvalidElementId:
+                    current_id = new_id
+                    cuts += 1
+                    doc.Regenerate()
+            sub.Commit()
+        except Exception:
+            sub.RollBack()
+            report['errors'] += 1
+            continue
+
+        if cuts > 0:
+            report['split_elems'] += 1
+            report['split_cuts'] += cuts
+        elif unsupported:
+            report['unsupported'] += 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -319,6 +489,8 @@ XAML_TEMPLATE = """
           </TextBlock>
         </Border>
         <CheckBox x:Name="ChkViewOnly" Content="Active view only (unticked = whole document)"
+                  FontSize="12" IsChecked="False" Margin="0,0,0,8"/>
+        <CheckBox x:Name="ChkPreview" Content="Preview only — count crossings, cut nothing"
                   FontSize="12" IsChecked="False" Margin="0,0,0,4"/>
 
         <!-- Status result — always visible after run -->
@@ -384,6 +556,7 @@ class MEPSplitDialog(object):
         self._wall_count_lbl = self.window.FindName("WallCountLabel")
         self._link_combo     = self.window.FindName("LinkCombo")
         self._chk_view_only  = self.window.FindName("ChkViewOnly")
+        self._chk_preview    = self.window.FindName("ChkPreview")
         self._status_bdr     = self.window.FindName("StatusBorder")
         self._status_title   = self.window.FindName("StatusTitle")
         self._status_txt     = self.window.FindName("StatusText")
@@ -491,7 +664,7 @@ class MEPSplitDialog(object):
 
         view_only = bool(self._chk_view_only.IsChecked)
         try:
-            elements = collect_target_elements(categories, view_only)
+            element_ids = collect_target_element_ids(categories, view_only)
         except Exception:
             self._show_status(
                 "⚠  Active view does not support this scope",
@@ -500,107 +673,74 @@ class MEPSplitDialog(object):
                 success=False)
             return
 
-        if not elements:
+        if not element_ids:
             self._show_status(
                 "⚠  No elements found",
                 "No elements of the ticked categories were found in scope.",
                 success=False)
             return
 
+        link_transform = self.selected_link.GetTotalTransform()
         try:
-            wall_solids = get_wall_solids_in_host_coords(
-                self.selected_link_doc, self.selected_link.GetTotalTransform())
+            wall_entries = collect_wall_entries(self.selected_link_doc, link_transform)
         except Exception:
-            wall_solids = []
+            wall_entries = []
 
-        if not wall_solids:
+        if not wall_entries:
             self._show_status(
-                "⚠  No wall geometry found",
-                "The selected linked model has no walls (or none with "
-                "usable solid geometry).",
+                "⚠  No walls found",
+                "The selected linked model has no walls to split against.",
                 success=False)
             return
 
-        split_elems = 0
-        split_cuts = 0
-        skipped_no_location = 0
-        skipped_curved = 0
-        skipped_no_crossing = 0
-        skipped_unsupported = 0
-        errors = 0
+        report = {
+            'split_elems': 0, 'split_cuts': 0, 'no_location': 0,
+            'curved': 0, 'no_crossing': 0, 'unsupported': 0, 'errors': 0,
+        }
 
-        with Transaction(doc, "DQT - Split MEP at Linked Wall") as t:
-            t.Start()
-            for elem in elements:
-                try:
-                    loc = elem.Location
-                    if not isinstance(loc, LocationCurve):
-                        skipped_no_location += 1
-                        continue
-                    curve = loc.Curve
-                    if not isinstance(curve, Line):
-                        skipped_curved += 1
-                        continue
+        # Phase 1 is read-only, phase 2 does every edit. Keeping them apart
+        # means no geometry is ever queried from a document that is midway
+        # through being modified, and no element reference outlives an edit.
+        plan = plan_breaks(element_ids, wall_entries,
+                           self.selected_link_doc, link_transform, report)
 
-                    break_points = find_break_points(curve, wall_solids)
-                    if not break_points:
-                        skipped_no_crossing += 1
-                        continue
+        if bool(self._chk_preview.IsChecked):
+            crossings = sum(len(points) for _, points in plan)
+            detail = ["• {0} run(s) scanned".format(len(element_ids)),
+                      "• {0} wall(s) in the link".format(len(wall_entries)),
+                      "• {0} run(s) would be cut, at {1} crossing(s)".format(len(plan), crossings)]
+            if report['curved'] > 0:
+                detail.append("• {0} run(s) skipped — curved (non-straight) section".format(report['curved']))
+            if report['errors'] > 0:
+                detail.append("• {0} error(s) during the scan".format(report['errors']))
+            self._show_status("Preview — nothing was changed",
+                              "\n".join(detail), success=True)
+            return
 
-                    # Each element's own sequence of breaks is atomic - if
-                    # any point in it fails partway, roll back just this
-                    # element rather than leaving it half-cut.
-                    sub = SubTransaction(doc)
-                    sub.Start()
-                    cuts_this_elem = 0
-                    unsupported_this_elem = False
-                    try:
-                        remaining_id = elem.Id
-                        for _, pt in break_points:
-                            remaining_elem = doc.GetElement(remaining_id)
-                            try:
-                                new_id = break_mep_curve(doc, remaining_elem, pt)
-                            except UnsupportedMEPSplit:
-                                unsupported_this_elem = True
-                                break
-                            if new_id and new_id != ElementId.InvalidElementId:
-                                remaining_id = new_id
-                                cuts_this_elem += 1
-                        sub.Commit()
-                    except Exception:
-                        sub.RollBack()
-                        errors += 1
-                        continue
+        if plan:
+            with Transaction(doc, "DQT - Split MEP at Linked Wall") as t:
+                t.Start()
+                apply_breaks(plan, report)
+                t.Commit()
 
-                    if cuts_this_elem > 0:
-                        split_elems += 1
-                        split_cuts += cuts_this_elem
-                    elif unsupported_this_elem:
-                        skipped_unsupported += 1
-
-                except Exception:
-                    errors += 1
-
-            t.Commit()
-
-        success = split_elems > 0
+        success = report['split_elems'] > 0
         if success:
             title = "✅  Completed — {0} run(s) split into {1} cut(s)".format(
-                split_elems, split_cuts)
+                report['split_elems'], report['split_cuts'])
         else:
             title = "⚠  Nothing was split"
 
         detail_lines = []
-        if skipped_no_crossing > 0:
-            detail_lines.append("• {0} run(s) don't cross any wall in the link".format(skipped_no_crossing))
-        if skipped_no_location > 0:
-            detail_lines.append("• {0} element(s) skipped — no straight-line location curve".format(skipped_no_location))
-        if skipped_curved > 0:
-            detail_lines.append("• {0} run(s) skipped — curved (non-straight) section".format(skipped_curved))
-        if skipped_unsupported > 0:
-            detail_lines.append("• {0} run(s) skipped — this Revit version can't split their category".format(skipped_unsupported))
-        if errors > 0:
-            detail_lines.append("• {0} error(s) encountered while splitting".format(errors))
+        if report['no_crossing'] > 0:
+            detail_lines.append("• {0} run(s) don't cross any wall in the link".format(report['no_crossing']))
+        if report['no_location'] > 0:
+            detail_lines.append("• {0} element(s) skipped — no straight-line location curve".format(report['no_location']))
+        if report['curved'] > 0:
+            detail_lines.append("• {0} run(s) skipped — curved (non-straight) section".format(report['curved']))
+        if report['unsupported'] > 0:
+            detail_lines.append("• {0} run(s) skipped — this Revit version can't split their category".format(report['unsupported']))
+        if report['errors'] > 0:
+            detail_lines.append("• {0} error(s) encountered while splitting".format(report['errors']))
         if not detail_lines:
             detail_lines.append("All crossing runs were split successfully.")
 

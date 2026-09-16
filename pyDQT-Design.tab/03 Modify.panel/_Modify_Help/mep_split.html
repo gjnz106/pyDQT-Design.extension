@@ -36,6 +36,7 @@
       <dt class="v-dark">Linked model</dt><dd>the link whose walls are used as the cut source; the badge shows how many walls it has</dd>
       <dt class="v-blue">Categories</dt><dd>Ducts, Pipes, Cable Trays, Conduits - tick which ones to check</dd>
       <dt class="v-gold">Active view only</dt><dd>unticked (default) scans the whole document; ticked limits the scan to elements visible in the active view</dd>
+      <dt class="v-grey">Preview only</dt><dd>runs the scan and reports what it found without changing anything - use it to check the result before committing to the cuts</dd>
     </dl>
   </div>
 
@@ -44,7 +45,9 @@
     <ol class="steps">
       <li>Pick the linked model that holds the walls to split against.</li>
       <li>Tick the categories to check.</li>
-      <li>Optionally tick <b>Active view only</b> to limit the scope.</li>
+      <li>Optionally tick <b>Active view only</b> to limit the scope, or
+        <b>Preview only</b> to see what would be cut without touching the
+        model.</li>
       <li><b>Split at Wall</b> scans every straight run of the ticked
         categories, finds every linked wall it physically crosses, and
         breaks the run into two elements at each crossing.</li>
