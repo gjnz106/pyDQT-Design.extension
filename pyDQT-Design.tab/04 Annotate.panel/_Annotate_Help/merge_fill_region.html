@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Merge Fill Region - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Merge Fill Region</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Fill regions</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Merge Fill Region</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Merges several filled regions in the active view into a single
+      filled region, using the first selected region's type. Boundaries
+      are extruded along the view direction and unioned, then the merged
+      outline is read back from the solid - so it works in any view
+      orientation (plan / section / elevation), keeps holes, and cleans up
+      collinear/short edges.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select at least 2 filled regions in the active view.</li>
+      <li>Run the tool.</li>
+      <li>The regions are merged into one, using the first selected
+        region's type; the original regions are deleted only after the
+        merged one is successfully created.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="snap_dimension.html"><span class="dir">&larr; Previous</span>Snap to Grid</a>
+    <a class="next" href="renumber_by_spline.html"><span class="dir">Next tool &rarr;</span>Renumber Along Spline</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

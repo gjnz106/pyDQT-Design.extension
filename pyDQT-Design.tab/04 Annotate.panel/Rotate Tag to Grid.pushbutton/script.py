@@ -25,6 +25,7 @@ __title__ = "Rotate Tag\nto Grid"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Rotate selected tag(s) to match a chosen grid's direction."
 
+import os
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -234,6 +235,21 @@ def rotate_tag_to_angle(doc, tag, angle):
 
 
 # ─── WPF UI ─────────────────────────────────────────────────
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 class RotateTagWindow(Window):
     def __init__(self, entries, tag_count):
         self.Title = "Rotate Tag to Grid"
@@ -338,6 +354,7 @@ class RotateTagWindow(Window):
         btn_panel = StackPanel()
         btn_panel.Children.Add(self._button("Rotate", self._on_run, primary=True))
         btn_panel.Children.Add(self._button("Cancel", self._on_cancel))
+        btn_panel.Children.Add(self._button("? Help", self._on_help))
         body.Children.Add(btn_panel)
 
         root.Children.Add(body)
@@ -369,6 +386,21 @@ class RotateTagWindow(Window):
     def _on_cancel(self, sender, args):
         self.result = None
         self.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("rotate_tag_to_grid.html"):
+            return
+        TaskDialog.Show(
+            "Rotate Tag to Grid",
+            "Rotates the selected tag(s) to match the direction of a grid "
+            "picked from the active view.\n\n"
+            "1. Select the tag(s) to rotate, then run the tool.\n"
+            "2. Pick which grid direction to rotate to from the dropdown - "
+            "only straight grids drawn in the current view are listed, "
+            "each with the angle it will apply.\n"
+            "3. 'Keep tag text upright' avoids an upside-down result.\n\n"
+            "Tags switch to 'Rotate with component' orientation to allow "
+            "free rotation.")
 
 
 # ─── Pick Helper ────────────────────────────────────────────

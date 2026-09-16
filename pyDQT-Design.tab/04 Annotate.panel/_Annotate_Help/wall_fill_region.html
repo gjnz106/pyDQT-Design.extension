@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wall Fill Region - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Wall Fill Region</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Fill regions</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Wall Fill Region</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Creates filled region(s) in the active plan view covering walls
+      and/or columns, from the host model and/or linked Revit files.
+      Footprints come from the real solid geometry (matching the elements
+      exactly, no overhang); overlapping footprints are merged into as few
+      regions as possible.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Modes</h2>
+    <dl class="kv">
+      <dt class="v-dark">All cut elements in view</dt><dd>automatic, by cut plane + crop region</dd>
+      <dt class="v-gold">Pick in host model</dt><dd>pick elements one by one from the current document</dd>
+      <dt class="v-green">Pick in linked models</dt><dd>pick elements one by one from a linked document</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Open a plan view (floor / structural / ceiling / area plan).</li>
+      <li>Run the tool and choose a mode.</li>
+      <li>Pick the Filled Region Type to use, and optionally a boundary
+        line style (or keep the region type's default).</li>
+      <li><b>All cut elements</b> mode: pick source model(s) and the
+        categories to cover, then the tool builds the regions
+        automatically.</li>
+      <li>Pick modes: keep picking elements in batches - after each batch
+        you're asked whether to pick more.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      A per-element fallback means one problematic element's geometry
+      can't crash or block the whole run - it's skipped and the rest still
+      complete.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="tag_checker.html"><span class="dir">&larr; Previous</span>Tag Checker</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

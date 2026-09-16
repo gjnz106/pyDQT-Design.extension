@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tag Checker - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Tag Checker</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Tags</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Tag Checker</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Checks whether elements in the active view are tagged, highlights
+      untagged elements, and flags tags that are placed too far from their
+      element or are showing a bare "?" (a broken tag reference) - a
+      single QA pass instead of scanning the view by eye.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Options</h2>
+    <dl class="kv">
+      <dt class="v-dark">Categories</dt><dd>tick which categories to check - All/None helpers included</dd>
+      <dt class="v-gold">Include Linked Files</dt><dd>also checks elements from linked models</dd>
+      <dt class="v-green">Max Tag Distance (mm)</dt><dd>how far a tag may sit from its element before it's flagged as "far away"</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Tick the categories and set the options.</li>
+      <li><b>Check Tags</b> runs the scan and lists Untagged / Far / Showing
+        "?" elements - double-click any row to zoom to it.</li>
+      <li><b>Tag All Untagged</b> auto-tags every untagged element found.</li>
+      <li><b>Select Untagged</b> selects them in Revit instead, if you'd
+        rather tag manually.</li>
+      <li><b>Reset Colors</b> clears any highlight colors this tool
+        applied; <b>Clear All</b> also clears the results list.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="rotate_tag_to_grid.html"><span class="dir">&larr; Previous</span>Rotate Tag to Grid</a>
+    <a class="next" href="wall_fill_region.html"><span class="dir">Next tool &rarr;</span>Wall Fill Region</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

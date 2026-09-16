@@ -14,6 +14,7 @@ __title__ = "Auto Dim\nBeams"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Auto dimension selected beams (any angle) in the active plan view."
 
+import os
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -35,6 +36,21 @@ from Autodesk.Revit.DB import (
 )
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from pyrevit import revit, forms, script
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 import System
 from System.Collections.Generic import List
@@ -690,6 +706,10 @@ class AutoDimBeamDialog(Window):
         bp = StackPanel(); bp.Orientation = Orientation.Horizontal
         bp.HorizontalAlignment = HorizontalAlignment.Right
         bp.Margin = Thickness(16, 14, 16, 14)
+        bh = Button(); bh.Content = "? Help"; bh.Width = 70; bh.Height = 32
+        bh.FontSize = 12; bh.Margin = Thickness(0, 0, 8, 0)
+        bh.Background = B(DQT_WHITE); bh.Foreground = B(DQT_TEXT_DARK)
+        bh.Click += self._on_help; bp.Children.Add(bh)
         bc = Button(); bc.Content = "Cancel"; bc.Width = 90; bc.Height = 32
         bc.FontSize = 12; bc.Margin = Thickness(0, 0, 8, 0)
         bc.Background = B(DQT_WHITE); bc.Foreground = B(DQT_TEXT_DARK)
@@ -712,6 +732,22 @@ class AutoDimBeamDialog(Window):
 
     def _cancel(self, s, e):
         self.result = None; self.Close()
+
+    def _on_help(self, s, e):
+        if _open_help_page("dim_beam.html"):
+            return
+        forms.alert(
+            "Auto-dimensions the selected beams (any angle) in the active "
+            "plan view.\n\n"
+            "Tick one or more dimension modes:\n"
+            "1. Beam Size - width (side to side).\n"
+            "2. Face to Grid - beam side face to the nearest parallel grid.\n"
+            "3. Center to Grid - beam centreline to the nearest parallel grid.\n"
+            "4. End to Grid - each beam end to the nearest perpendicular grid.\n\n"
+            "Set the dimension line offset (mm) and optionally 'Avoid "
+            "overlapping existing dimensions / tags / text', then Create "
+            "Dimensions.",
+            title="Auto Dimension Beams - DQT")
 
     def _run(self, s, e):
         try:

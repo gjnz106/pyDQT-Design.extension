@@ -27,6 +27,7 @@ __persistentengine__ = True
 # ===========================================================================
 # IMPORTS
 # ===========================================================================
+import os
 import clr
 import sys
 import math
@@ -1231,7 +1232,9 @@ XAML_STR = """
                     <Button x:Name="btnResetColors" Content="Reset Colors"
                             Style="{StaticResource GoldBtn}" Margin="0,0,8,0"/>
                     <Button x:Name="btnClearAll" Content="Clear All"
-                            Style="{StaticResource RedBtn}"/>
+                            Style="{StaticResource RedBtn}" Margin="0,0,8,0"/>
+                    <Button x:Name="btnHelp" Content="? Help"
+                            Style="{StaticResource GoldBtn}"/>
                 </StackPanel>
 
                 <!-- RESULTS -->
@@ -1439,6 +1442,21 @@ class _ZoomEventHandler(IExternalEventHandler):
 
 
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 class TagCheckerWindow(object):
     """Modeless WPF window. Zoom/select run via ExternalEvent so Revit stays
     interactive (you can re-host a tag, then pick the next one)."""
@@ -1473,6 +1491,7 @@ class TagCheckerWindow(object):
         self.btnSelect = self.window.FindName("btnSelect")
         self.btnResetColors = self.window.FindName("btnResetColors")
         self.btnClearAll = self.window.FindName("btnClearAll")
+        self.btnHelp = self.window.FindName("btnHelp")
         self.borderResults = self.window.FindName("borderResults")
         self.tbSummary = self.window.FindName("tbSummary")
         self.borderProgress = self.window.FindName("borderProgress")
@@ -1501,6 +1520,7 @@ class TagCheckerWindow(object):
         self.btnSelect.Click += self._on_select_untagged
         self.btnResetColors.Click += self._on_reset_colors
         self.btnClearAll.Click += self._on_clear_all
+        self.btnHelp.Click += self._on_help
         self.lbUntagged.MouseDoubleClick += self._on_untagged_dblclick
         self.lbFarTags.MouseDoubleClick += self._on_far_dblclick
         self.lbQuestionTags.MouseDoubleClick += self._on_question_dblclick
@@ -1610,6 +1630,26 @@ class TagCheckerWindow(object):
 
     def _on_clear_all(self, sender, args):
         self._raise("clearall")
+
+    def _on_help(self, sender, args):
+        if _open_help_page("tag_checker.html"):
+            return
+        WPFMessageBox.Show(
+            "Checks whether elements in the active view are tagged, "
+            "highlights untagged elements, and flags tags that are placed "
+            "too far from their element or are showing a bare '?' "
+            "(a broken tag reference).\n\n"
+            "- Tick the categories to check (All/None helpers included).\n"
+            "- 'Include Linked Files' also checks elements from linked models.\n"
+            "- Max Tag Distance (mm) sets how far a tag may sit from its "
+            "element before it's flagged as 'far away'.\n"
+            "- Check Tags runs the scan and lists Untagged / Far / "
+            "Showing \"?\" elements, each double-clickable to zoom to it.\n"
+            "- Tag All Untagged auto-tags every untagged element found.\n"
+            "- Select Untagged selects them in Revit instead.\n"
+            "- Reset Colors clears any highlight colors this tool applied; "
+            "Clear All also clears the results list.",
+            "Tag Checker")
 
     # --- Double-click zoom ---
     def _on_untagged_dblclick(self, sender, args):
