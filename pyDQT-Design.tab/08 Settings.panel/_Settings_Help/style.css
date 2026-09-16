@@ -1,0 +1,282 @@
+/* IFC-SG Toolset - shared help page style
+   Matches the DQT gold theme used across the pyDQT-Manage WPF tools:
+   background #FEF8E7, header #F0CC88, border #D4B87A, dark text #5D4E37 */
+
+:root {
+  --bg: #FEF8E7;
+  --header: #F0CC88;
+  --border: #D4B87A;
+  --text-dark: #5D4E37;
+  --text-body: #333333;
+  --card-bg: #FFFFFF;
+  --green: #4CAF50;
+  --blue: #2196F3;
+  --purple: #9C27B0;
+  --orange: #FF9800;
+  --gold: #E5B85C;
+  --danger-bg: #FFCDD2;
+  --danger-text: #C62828;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text-body);
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 20px 60px;
+}
+
+/* ---------------- Header band ---------------- */
+.page-header {
+  background: var(--header);
+  border-bottom: 3px solid var(--border);
+  padding: 22px 20px 18px;
+  margin-bottom: 24px;
+}
+.page-header .inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+.page-header .subtitle {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-dark);
+  opacity: 0.85;
+}
+.badge {
+  display: inline-block;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-dark);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ---------------- Breadcrumb / nav ---------------- */
+.crumbs {
+  font-size: 12.5px;
+  margin-bottom: 18px;
+}
+.crumbs a { color: var(--text-dark); font-weight: 600; text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.crumbs span { color: #999; margin: 0 4px; }
+
+/* ---------------- Cards ---------------- */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+}
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  color: var(--text-dark);
+  border-bottom: 1px solid #F0EAD8;
+  padding-bottom: 8px;
+}
+.card h3 {
+  font-size: 14.5px;
+  color: var(--text-dark);
+  margin: 16px 0 6px;
+}
+.card p { margin: 6px 0; }
+.card ul, .card ol { margin: 6px 0 6px 0; padding-left: 22px; }
+.card li { margin: 4px 0; }
+.lede {
+  font-size: 16px;
+  color: var(--text-dark);
+}
+
+/* ---------------- Stat card strip ---------------- */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.stat {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.stat .label { font-size: 9px; letter-spacing: .03em; color: #666; text-transform: uppercase; }
+.stat .value { font-size: 15px; font-weight: 700; }
+.v-green { color: var(--green); }
+.v-blue { color: var(--blue); }
+.v-purple { color: var(--purple); }
+.v-orange { color: var(--orange); }
+.v-gold { color: var(--gold); }
+.v-red { color: var(--danger-text); }
+.v-grey { color: #546E7A; }
+
+/* ---------------- Steps ---------------- */
+.steps { counter-reset: step; list-style: none; padding-left: 0; margin: 10px 0; }
+.steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: 6px 0 6px 34px;
+  margin-bottom: 2px;
+}
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0; top: 5px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--header);
+  border: 1px solid var(--border);
+  color: var(--text-dark);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+/* A plain sub-list nested inside a step (its own set of options/buttons) -
+   dashes, not a continuation of the outer 1-2-3 numbering. */
+.steps ul {
+  list-style: none;
+  padding-left: 4px;
+  margin: 6px 0 2px;
+}
+.steps ul li {
+  padding: 3px 0 3px 16px;
+  position: relative;
+}
+.steps ul li::before {
+  content: "\2013";
+  position: absolute;
+  left: 0;
+  color: var(--text-dark);
+}
+
+/* ---------------- Tip / warning / done boxes ---------------- */
+.box {
+  border-radius: 5px;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 13.5px;
+}
+.box.tip   { background: #EAF6EC; border: 1px solid #BFE3C4; }
+.box.warn  { background: #FFF6E5; border: 1px solid #F0D897; }
+.box.fixed { background: #EAF2FB; border: 1px solid #BFD6F0; }
+.box b { color: var(--text-dark); }
+
+/* ---------------- Key/value definition rows ---------------- */
+dl.kv { margin: 6px 0; }
+dl.kv dt { font-weight: 700; float: left; clear: left; width: 190px; font-size: 12.5px; letter-spacing: .02em; }
+dl.kv dd { margin: 0 0 8px 200px; }
+dl.kv dt.v-dark { color: var(--text-dark); }
+
+code, .code {
+  background: #F3EEDD;
+  border: 1px solid #E5DAB8;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  color: var(--text-dark);
+}
+
+table.cmp {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13.5px;
+}
+table.cmp th, table.cmp td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+table.cmp th { background: var(--header); color: var(--text-dark); }
+table.cmp tr:nth-child(even) td { background: #FFFDF6; }
+
+/* ---------------- Tool index grid (index.html) ---------------- */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 10px 0;
+}
+.tool-card {
+  display: block;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.tool-card:hover {
+  box-shadow: 0 3px 10px rgba(93,78,55,0.15);
+  transform: translateY(-1px);
+}
+.tool-card .step-no {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-dark);
+  background: var(--header);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  margin-bottom: 8px;
+}
+.tool-card h3 { margin: 0 0 4px; font-size: 15.5px; color: var(--text-dark); }
+.tool-card p { margin: 0; font-size: 12.5px; color: #666; }
+
+/* ---------------- Prev/next footer nav ---------------- */
+.pagenav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 22px;
+  font-size: 13px;
+}
+.pagenav a {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: #FFFFFF;
+  border-radius: 5px;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: var(--text-dark);
+}
+.pagenav a:hover { background: #FFFDF6; }
+.pagenav .next { text-align: right; }
+.pagenav .dir { display: block; font-size: 10.5px; color: #999; text-transform: uppercase; letter-spacing: .04em; }
+
+footer.site {
+  text-align: center;
+  font-size: 11px;
+  color: #999;
+  margin-top: 30px;
+}

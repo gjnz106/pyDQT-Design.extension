@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Color Splasher - Settings Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Color Splasher</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Data visualization</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Settings Toolset</a><span>&rsaquo;</span>Color Splasher</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Colors elements in the active view based on a chosen parameter's
+      value, so patterns in the model data (by level, phase, system type,
+      status, and so on) become visible at a glance - with a legend and
+      matching real Revit view filters generated from the same color
+      scheme.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Layout</h2>
+    <dl class="kv">
+      <dt class="v-dark">Source</dt><dd>the active model, or a loaded linked model</dd>
+      <dt class="v-dark">Category</dt><dd>scopes which elements are read</dd>
+      <dt class="v-blue">Parameter list</dt><dd>search box filters it; pick the parameter whose values drive the coloring</dd>
+      <dt class="v-gold">Color list</dt><dd>one row per distinct value found, with its assigned color - click a row's swatch to pick your own color</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick a Source (current model or a link), then a Category and a
+        Parameter - the value list populates automatically.</li>
+      <li><b>Gradient Colors</b> or <b>Random Colors</b> auto-assigns a
+        color per value, or click any row to pick a color by hand.</li>
+      <li><b>Apply Colors</b> sets a graphic override on every matching
+        element in the active view (via View Filters when the source is a
+        link, so it works across linked models too).</li>
+      <li><b>Create Legend</b> places a legend view text/color key for
+        the current scheme; <b>Create View Filters</b> turns the same
+        colors into real, reusable Revit view filters.</li>
+      <li><b>Save Colors... / Load Colors...</b> save or reuse a color
+        scheme as a file, e.g. to keep the same value-to-color mapping
+        across models.</li>
+      <li><b>Reset</b> clears every override this tool applied to the
+        active view.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Loading a saved color scheme reports how many values matched, and
+      lists any values in the current model that weren't in the saved
+      file (so you can assign them) and any saved colors that no longer
+      apply.
+    </div>
+  </div>
+
+  <footer class="site">Settings Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
