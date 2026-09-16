@@ -40,12 +40,28 @@ from System.IO import MemoryStream
 from System.Text import Encoding
 from System.Windows.Markup import XamlReader
 from System.Windows.Media import BrushConverter
+from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
 
 # ------------------------------------------------------------------ GENERAL
 app = __revit__.Application
 
 PATH_SCRIPT = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(PATH_SCRIPT, "dqt_bg_config.json")
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _00_UI_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_00_UI_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 # Detect SHIFT+Click for quick-cycle (classic B/W/G behaviour)
 try:
@@ -240,12 +256,18 @@ XAML = """<Window
     <!-- Header -->
     <Border Grid.Row="0" Background="#F0CC88"
             BorderBrush="#D4B87A" BorderThickness="0,0,0,2" Padding="16,12">
-      <StackPanel>
-        <TextBlock Text="Background Theme" Foreground="#5D4E37"
-                   FontSize="18" FontWeight="Bold"/>
-        <TextBlock Text="Choose a preset, fine-tune, preview, and apply."
-                   Foreground="#5D4E37" FontSize="11" Margin="0,2,0,0"/>
-      </StackPanel>
+      <Grid>
+        <StackPanel>
+          <TextBlock Text="Background Theme" Foreground="#5D4E37"
+                     FontSize="18" FontWeight="Bold"/>
+          <TextBlock Text="Choose a preset, fine-tune, preview, and apply."
+                     Foreground="#5D4E37" FontSize="11" Margin="0,2,0,0"/>
+        </StackPanel>
+        <Button x:Name="BtnHelp" Content="? Help" Style="{StaticResource DqtButton}"
+                Padding="10,4" Margin="0" FontSize="11"
+                HorizontalAlignment="Right" VerticalAlignment="Center"
+                Background="#FFFFFF"/>
+      </Grid>
     </Border>
 
     <!-- Body -->
@@ -372,6 +394,7 @@ class BackgroundThemeWindow(object):
         self.preview_lbl = self.win.FindName("PreviewLbl")
         self.btn_apply = self.win.FindName("BtnApply")
         self.btn_close = self.win.FindName("BtnClose")
+        self.btn_help = self.win.FindName("BtnHelp")
 
         # Build preset buttons
         self._build_presets()
@@ -383,6 +406,7 @@ class BackgroundThemeWindow(object):
         self.hex_apply.Click += self._on_hex_apply
         self.btn_apply.Click += self._on_apply
         self.btn_close.Click += self._on_close
+        self.btn_help.Click += self._on_help
 
         # Initial state
         self.set_rgb(r, g, b)
@@ -471,6 +495,25 @@ class BackgroundThemeWindow(object):
 
     def _on_close(self, sender, args):
         self.win.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("bg_theme.html"):
+            return
+        MessageBox.Show(
+            "DQT - Background Theme\n\n"
+            "Set the Revit model-view background colour from a themed picker "
+            "with live preview.\n\n"
+            "- Pick a preset (Black / Gray / White / Dark Blue / Studio), or "
+            "fine-tune with the RGB sliders or a HEX value.\n"
+            "- The preview updates live as you adjust.\n"
+            "- Apply sets the active view's background and remembers the "
+            "choice for next time; the window stays open so you can keep "
+            "trying colours.\n"
+            "- SHIFT+Click the ribbon button to quick-cycle "
+            "Black -> Gray -> White -> Black like the classic tool, "
+            "skipping this window entirely.\n\n"
+            "Works on Revit 2024 / 2025 / 2026 / 2027.",
+            "DQT - Background Theme", MessageBoxButton.OK, MessageBoxImage.Information)
 
     def show(self):
         self.win.ShowDialog()
