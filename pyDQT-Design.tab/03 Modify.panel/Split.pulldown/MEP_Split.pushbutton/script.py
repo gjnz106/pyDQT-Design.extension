@@ -34,7 +34,7 @@ import System
 from System.IO import MemoryStream
 from System.Text import Encoding
 from System.Windows.Markup import XamlReader
-from System.Windows import Window, Thickness, MessageBox, MessageBoxButton, MessageBoxImage
+from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
 from System.Windows.Controls import ComboBoxItem
 from System.Collections.Generic import List
 
