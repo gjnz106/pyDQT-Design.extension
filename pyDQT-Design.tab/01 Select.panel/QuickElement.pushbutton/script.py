@@ -20,6 +20,7 @@ __doc__ = "Quickly find, select, and zoom to any element in your Revit model."
 # =============================================================================
 # IMPORTS
 # =============================================================================
+import os
 import clr
 clr.AddReference('System')
 clr.AddReference('System.Core')
@@ -64,6 +65,21 @@ def _eid_int(element_id):
     except AttributeError:
         # Revit 2023 and earlier uses .IntegerValue
         return element_id.IntegerValue
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Select_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Select_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 # =============================================================================
 # XAML UI DEFINITION
@@ -138,6 +154,7 @@ XAML_STR = '''
                         <ComboBoxItem Content="Entire Project"/>
                         <ComboBoxItem Content="Current Selection"/>
                     </ComboBox>
+                    <Button x:Name="btnHelp" Content="? Help" Style="{StaticResource BtnSecondary}" Margin="10,0,0,0"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -638,6 +655,7 @@ class QuickSelectWindow(Window):
         self.btnShow = self._find("btnShow")
         self.btnRefresh = self._find("btnRefresh")
         self.btnClose = self._find("btnClose")
+        self.btnHelp = self._find("btnHelp")
     
     def _setup_events(self):
         """Setup event handlers"""
@@ -679,6 +697,8 @@ class QuickSelectWindow(Window):
             self.btnRefresh.Click += self._on_refresh
         if self.btnClose:
             self.btnClose.Click += self._on_close
+        if self.btnHelp:
+            self.btnHelp.Click += self._on_help
     
     def _load_data(self):
         """Load element data"""
@@ -1022,6 +1042,22 @@ class QuickSelectWindow(Window):
     def _on_close(self, sender, args):
         """Close window"""
         self.Close()
+
+    def _on_help(self, sender, args):
+        """Open the tool's usage-guide page, or fall back to an alert."""
+        if _open_help_page("quick_select.html"):
+            return
+        forms.alert(
+            "Quickly find, select, and zoom to any element in the model.\n\n"
+            "- Display picks the scope: Active View, Entire Project, or "
+            "Current Selection.\n"
+            "- Search filters by category, family, type, name/mark or ID.\n"
+            "- Filter By and the Category list narrow further.\n"
+            "- Check rows (or use Check All / Uncheck All / Invert), then "
+            "Zoom To, Select in Model, Isolate, or Show Element.\n"
+            "- Double-click a row to zoom to it directly.\n"
+            "- Shift+Click / Ctrl+Click for range and multi-select in the grid.",
+            title="Quick Select")
     
     def _zoom_to_element(self, element_id):
         """Zoom to element"""
