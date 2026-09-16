@@ -58,7 +58,7 @@ def _open_help_page(html_filename):
 
 import Autodesk.Revit.DB as DB
 from Autodesk.Revit.DB import (
-    FilteredElementCollector, BuiltInCategory, Transaction,
+    FilteredElementCollector, BuiltInCategory, Transaction, SubTransaction,
     RevitLinkInstance, Line, XYZ, ElementId, Options,
     SolidCurveIntersectionOptions, LocationCurve, ElementMulticategoryFilter,
 )
@@ -78,6 +78,9 @@ CATEGORY_OPTIONS = [
 ]
 
 TOLERANCE_FT = 0.01  # ~3mm - de-duplicates break points that are essentially the same
+END_CLEARANCE_FT = 0.166  # ~50mm - keep break points clear of the run's own ends;
+                          # breaking a hair's-width from an element's end is a known
+                          # way to crash Revit's native break-curve implementation
 
 
 class UnsupportedMEPSplit(Exception):
@@ -153,7 +156,13 @@ def break_mep_curve(document, element, point):
 def find_break_points(curve, wall_solids):
     """Return a sorted, de-duplicated list of (parameter, XYZ) points
     where `curve` physically crosses one of the given wall solids - the
-    midpoint of each solid/curve intersection segment."""
+    midpoint of each solid/curve intersection segment, projected exactly
+    onto `curve` (the transformed wall solid can carry tiny floating-point
+    noise that the raw midpoint doesn't fully cancel out) and kept clear
+    of the run's own endpoints."""
+    p_start = curve.GetEndPoint(0)
+    p_end = curve.GetEndPoint(1)
+
     candidates = []
     curve_opts = SolidCurveIntersectionOptions()
     for wall, solids in wall_solids:
@@ -172,10 +181,17 @@ def find_break_points(curve, wall_solids):
                     p0, p1 = seg.GetEndPoint(0), seg.GetEndPoint(1)
                     mid = XYZ((p0.X + p1.X) / 2.0, (p0.Y + p1.Y) / 2.0, (p0.Z + p1.Z) / 2.0)
                 try:
-                    param = curve.Project(mid).Parameter
+                    proj = curve.Project(mid)
+                    pt = proj.XYZPoint
+                    param = proj.Parameter
                 except Exception:
                     continue
-                candidates.append((param, mid))
+                # A break right at (or a hair's-width from) the run's own
+                # end is a known way to crash Revit's native break-curve
+                # implementation instead of raising a catchable error.
+                if pt.DistanceTo(p_start) < END_CLEARANCE_FT or pt.DistanceTo(p_end) < END_CLEARANCE_FT:
+                    continue
+                candidates.append((param, pt))
 
     candidates.sort(key=lambda c: c[0])
     deduped = []
@@ -531,22 +547,30 @@ class MEPSplitDialog(object):
                         skipped_no_crossing += 1
                         continue
 
-                    remaining_id = elem.Id
+                    # Each element's own sequence of breaks is atomic - if
+                    # any point in it fails partway, roll back just this
+                    # element rather than leaving it half-cut.
+                    sub = SubTransaction(doc)
+                    sub.Start()
                     cuts_this_elem = 0
                     unsupported_this_elem = False
-                    for _, pt in break_points:
-                        try:
+                    try:
+                        remaining_id = elem.Id
+                        for _, pt in break_points:
                             remaining_elem = doc.GetElement(remaining_id)
-                            new_id = break_mep_curve(doc, remaining_elem, pt)
+                            try:
+                                new_id = break_mep_curve(doc, remaining_elem, pt)
+                            except UnsupportedMEPSplit:
+                                unsupported_this_elem = True
+                                break
                             if new_id and new_id != ElementId.InvalidElementId:
                                 remaining_id = new_id
                                 cuts_this_elem += 1
-                        except UnsupportedMEPSplit:
-                            unsupported_this_elem = True
-                            break
-                        except Exception:
-                            errors += 1
-                            continue
+                        sub.Commit()
+                    except Exception:
+                        sub.RollBack()
+                        errors += 1
+                        continue
 
                     if cuts_this_elem > 0:
                         split_elems += 1

@@ -66,6 +66,11 @@
       on the wall's actual solid geometry, not just its bounding box.
     </div>
     <div class="box tip">
+      A crossing within ~50mm of the run's own end is skipped rather than
+      cut - breaking that close to an end is a known way to destabilize
+      Revit's native break-curve API, not just this tool.
+    </div>
+    <div class="box tip">
       Looking for the inverse operation - cutting the <b>wall</b> instead
       of the MEP element - see
       <a href="wall_cut_profile.html">Wall Profile Cut from Link</a>.
