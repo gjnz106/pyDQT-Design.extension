@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Room To Area - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Room To Area</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Rooms &amp; areas</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Room To Area</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Automatically creates Areas from selected Rooms - draws area boundary
+      lines matching each room's boundary and places the Area element,
+      instead of tracing area boundaries by hand.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>The grid lists candidate rooms - use <b>Check All</b> /
+        <b>Uncheck All</b> / <b>Invert</b> to manage which are included.</li>
+      <li><b>Select in Revit</b> selects the checked rooms in the model, to
+        verify you have the right ones.</li>
+      <li>Pick the target area scheme and area plan view; tick
+        <b>Auto-create Area Plan if missing</b> to have the tool create the
+        view automatically when the chosen scheme has none.</li>
+      <li>Tick which room parameters to carry over under <b>Transfer
+        Parameters</b> (All/None).</li>
+      <li><b>Create from Checked</b> processes every checked room;
+        <b>Create from Selected</b> processes only the rooms currently
+        selected in the grid.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="revise_base.html"><span class="dir">&larr; Previous</span>Revise Base</a>
+    <a class="next" href="split_ceiling.html"><span class="dir">Next tool &rarr;</span>Split Ceiling</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

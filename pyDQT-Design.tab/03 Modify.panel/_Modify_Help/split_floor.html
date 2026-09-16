@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Split Floor - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Split Floor</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Split tools</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Split Floor</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Splits a floor with multiple disconnected boundary loops into
+      separate individual floor elements - one per disconnected boundary,
+      matching <a href="split_ceiling.html">Split Ceiling</a>'s approach
+      but for floors.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool and confirm to start picking.</li>
+      <li>Select the floor(s) to split (Esc or Finish when done).</li>
+      <li>Each disconnected boundary loop becomes its own new floor; a
+        summary reports how many were created.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box warn">
+      A floor with modified vertices (height adjustments / a sloped slab)
+      triggers a warning before splitting: the tool tries to re-apply
+      those point modifications to the new floors by matching vertices,
+      but the result can be imperfect - verify the elevations afterward.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="split_columns.html"><span class="dir">&larr; Previous</span>Split Columns</a>
+    <a class="next" href="split_shaft.html"><span class="dir">Next tool &rarr;</span>Split Shaft Opening</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

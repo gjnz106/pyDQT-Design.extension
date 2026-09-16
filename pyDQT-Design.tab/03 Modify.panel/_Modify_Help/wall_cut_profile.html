@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wall Profile Cut from Link - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Wall Profile Cut from Link</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Openings</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Wall Profile Cut from Link</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Creates openings in walls wherever they intersect elements (ducts,
+      pipes, structural framing, and so on) from a linked model - a batch
+      coordination tool for cutting MEP/structural clashes into hosted
+      walls, using pyRevit's own dialogs only (no custom WPF window).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the Revit Link to check against.</li>
+      <li>Pick the categories to scan in that link (ducts, pipes, framing, etc).</li>
+      <li>Choose which walls to check: All Walls in Active View, or Pick
+        Walls Manually.</li>
+      <li>The tool scans for intersections and lists every one found;
+        tick which ones to actually cut.</li>
+      <li>Choose the opening method: <b>Wall Opening</b> (recommended),
+        <b>Edit Wall Profile</b>, or <b>Place Opening Family</b> (pick a
+        family/type if chosen).</li>
+      <li>Enter an offset (mm) - a buffer added around each intersecting
+        element - then the tool creates the openings and reports how many
+        succeeded.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      If <b>Edit Wall Profile</b> fails for a given intersection, the tool
+      automatically falls back to the <b>Wall Opening</b> method for that
+      one instead of just reporting a failure.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="split_walls.html"><span class="dir">&larr; Previous</span>Split Walls</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

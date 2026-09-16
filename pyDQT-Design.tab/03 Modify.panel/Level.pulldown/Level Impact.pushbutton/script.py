@@ -33,6 +33,7 @@ __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = ("Check which elements would change elevation if a Level's "
            "elevation is changed (simulated, non-destructive).")
 
+import os
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -45,6 +46,21 @@ from Autodesk.Revit.DB import (
     Transaction, FilteredElementCollector, Level, ElementId, CategoryType
 )
 from pyrevit import forms, script
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 import System
 from System.Collections.Generic import List
@@ -281,6 +297,10 @@ class LevelImpactDialog(Window):
         bp = StackPanel(); bp.Orientation = Orientation.Horizontal
         bp.HorizontalAlignment = HorizontalAlignment.Right
         bp.Margin = Thickness(16, 14, 16, 14)
+        bh = Button(); bh.Content = "? Help"; bh.Width = 70; bh.Height = 32
+        bh.FontSize = 12; bh.Margin = Thickness(0, 0, 8, 0)
+        bh.Background = B(DQT_WHITE); bh.Foreground = B(DQT_TEXT_DARK)
+        bh.Click += self._on_help; bp.Children.Add(bh)
         bc = Button(); bc.Content = "Cancel"; bc.Width = 90; bc.Height = 32
         bc.FontSize = 12; bc.Margin = Thickness(0, 0, 8, 0)
         bc.Background = B(DQT_WHITE); bc.Foreground = B(DQT_TEXT_DARK)
@@ -318,6 +338,22 @@ class LevelImpactDialog(Window):
 
     def _cancel(self, s, e):
         self.result = None; self.Close()
+
+    def _on_help(self, s, e):
+        if _open_help_page("level_impact.html"):
+            return
+        forms.alert(
+            "Answers 'if I change this Level's elevation, which elements "
+            "move with it?' BEFORE you actually do it.\n\n"
+            "The change is simulated inside a transaction that is always "
+            "rolled back - nothing in the model is modified.\n\n"
+            "- Pick the Level and the elevation change (mm, + = up).\n"
+            "- Scope: check the entire model, or just the current selection.\n"
+            "- Check Impact reports 'Moves with level' (fully driven by "
+            "this level) vs 'Partially affected' (e.g. only one end "
+            "constrained to it), per category, and selects the affected "
+            "elements in the model.",
+            title="Level Impact")
 
     def _run(self, s, e):
         lvl = self._current_level()

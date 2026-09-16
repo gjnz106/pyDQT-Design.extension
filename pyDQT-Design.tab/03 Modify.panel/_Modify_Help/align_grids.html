@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Align Grids - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Align Grids</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Grids &amp; levels</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Align Grids</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Aligns grid start/end 2D extents to a reference element (Grid, Detail
+      Line, Model Line, or Reference Plane) - useful for snapping a batch
+      of grids to a consistent extent line instead of dragging each one.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Choose which end(s) to align: Start (Bubble End), End
+        (Non-Bubble), or Both (picks 2 references).</li>
+      <li>Click <b>Run Alignment</b>.</li>
+      <li>Select the grids to align (Enter/Right-click to finish).</li>
+      <li>Pick the reference element - the grid endpoint snaps to its line.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      <b>Force 2D extent</b> switches the grid to a view-specific 2D extent
+      before aligning, if it isn't already - needed because a 3D-extent
+      grid's endpoint is shared across every view and can't be aligned
+      independently in just one.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="floor_points.html"><span class="dir">&larr; Previous</span>Floor Points</a>
+    <a class="next" href="grid_swap.html"><span class="dir">Next tool &rarr;</span>Grid Swap</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

@@ -39,6 +39,21 @@ from System.Windows.Controls import (
 )
 from System.Windows.Media import SolidColorBrush, Color
 
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
 import Autodesk.Revit.DB as DB
 from Autodesk.Revit.DB import (
     Transaction, FilteredElementCollector, BuiltInCategory,
@@ -878,6 +893,8 @@ XAML_STR = '''
                         Style="{StaticResource ActionBtn}" Margin="0,0,8,0"/>
                 <Button Grid.Column="1" x:Name="btnPreview" Content="Preview"
                         Style="{StaticResource ActionBtn}" Margin="0,0,8,0"/>
+                <Button Grid.Column="2" x:Name="btnHelp" Content="? Help"
+                        Style="{StaticResource ActionBtn}" Width="70" HorizontalAlignment="Left"/>
                 <Button Grid.Column="3" x:Name="btnCreate" Content="Create Walls"
                         Style="{StaticResource PrimaryBtn}" Width="140" Margin="0,0,8,0"/>
                 <Button Grid.Column="4" x:Name="btnClose" Content="Close"
@@ -935,6 +952,7 @@ class CADtoWallWindow(Window):
         self.btnPreview = self._xr.FindName("btnPreview")
         self.btnCreate = self._xr.FindName("btnCreate")
         self.btnClose = self._xr.FindName("btnClose")
+        self.btnHelp = self._xr.FindName("btnHelp")
         self.txtStatus = self._xr.FindName("txtStatus")
 
         self.cad_list = []
@@ -949,6 +967,7 @@ class CADtoWallWindow(Window):
         self.btnPreview.Click += self.on_preview
         self.btnCreate.Click += self.on_create
         self.btnClose.Click += self.on_close
+        self.btnHelp.Click += self.on_help
 
         self._load_data()
 
@@ -1183,6 +1202,19 @@ class CADtoWallWindow(Window):
 
     def on_close(self, sender, args):
         self.Close()
+
+    def on_help(self, sender, args):
+        if _open_help_page("cad_to_wall.html"):
+            return
+        MessageBox.Show(
+            "Reads lines from a CAD import/link, detects parallel pairs, "
+            "computes centerlines, and auto-creates Wall Types matching the "
+            "detected thickness.\n\n"
+            "- Refresh Layers lists the CAD file's layers to choose from.\n"
+            "- Preview shows the walls that would be created, without "
+            "creating them.\n"
+            "- Pick a Level and enter a wall height, then Create Walls.",
+            "CAD to Wall - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
 
 
 # ============================================================

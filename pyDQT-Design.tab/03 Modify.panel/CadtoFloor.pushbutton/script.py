@@ -362,8 +362,11 @@ XAML_MAIN = """
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button x:Name="btn_refresh" Grid.Column="0" Content="Refresh"
-                        Style="{StaticResource ActionButton}" Background="#EEEEEE" 
+                        Style="{StaticResource ActionButton}" Background="#EEEEEE"
                         Foreground="#555" Width="90"/>
+                <Button x:Name="btn_help" Grid.Column="1" Content="? Help"
+                        Style="{StaticResource ActionButton}" Background="#EEEEEE"
+                        Foreground="#555" Width="70" HorizontalAlignment="Left" Margin="8,0,0,0"/>
                 <Button x:Name="btn_create" Grid.Column="2" Content="Create Floors"
                         Style="{StaticResource ActionButton}" Background="#C89650" 
                         Foreground="White" Width="140" IsEnabled="False"/>
@@ -413,6 +416,21 @@ XAML_LAYER_ITEM = """
 def load_xaml_from_string(xaml_string):
     """Load XAML from string"""
     return XamlReader.Parse(xaml_string)
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 
 def mm_to_feet(mm):
@@ -824,6 +842,7 @@ class CADtoFloorWindow(object):
         self.btn_refresh = self.window.FindName("btn_refresh")
         self.btn_create = self.window.FindName("btn_create")
         self.btn_close = self.window.FindName("btn_close")
+        self.btn_help = self.window.FindName("btn_help")
         
         # Data
         self.doc = revit.doc
@@ -847,6 +866,7 @@ class CADtoFloorWindow(object):
         self.btn_refresh.Click += self._on_refresh
         self.btn_create.Click += self._on_create_elements
         self.btn_close.Click += self._on_close
+        self.btn_help.Click += self._on_help
         self.rb_floor.Checked += self._on_mode_changed
         self.rb_part.Checked += self._on_mode_changed
         
@@ -1271,6 +1291,18 @@ class CADtoFloorWindow(object):
     def _on_close(self, sender, args):
         self._pick_element_id = None
         self.window.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("cad_to_floor.html"):
+            return
+        MessageBox.Show(
+            "Creates Revit Floor or Part (DirectShape) elements from linked "
+            "or imported AutoCAD DWG geometry.\n\n"
+            "- Pick a CAD import/link, then Scan Layers to list its layers.\n"
+            "- Tick the layers to convert (Select All / Select None help).\n"
+            "- Choose Floor or Part mode, then Create Floors/Parts.\n"
+            "- Refresh re-scans after picking a different CAD file.",
+            "CAD to Floor / Part - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
     
     def show(self):
         self.window.ShowDialog()

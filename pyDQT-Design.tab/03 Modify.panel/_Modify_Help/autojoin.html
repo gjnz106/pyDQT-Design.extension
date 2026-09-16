@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Auto Join Elements - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Auto Join Elements</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Element joins</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Auto Join Elements</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Joins or unjoins elements in the active view using rule-based
+      category pairs, instead of picking pairs one at a time. Each rule
+      defines a Priority Category and a Join With Category - the Priority
+      Category cuts the other one, matching Revit's own join direction
+      semantics.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Add one or more rules (category pairs) with <b>Add Rule</b>; the
+        <b>Switch</b> button on a rule swaps which side cuts which.</li>
+      <li>Tick <b>Selected elements only</b> to restrict Join/Unjoin to the
+        current Revit selection instead of the whole active view.</li>
+      <li><b>Join</b> applies every enabled rule; <b>Unjoin</b> removes those joins.</li>
+      <li><b>Save Setting</b> / <b>Delete Setting</b> keep named rule sets,
+        picked from the dropdown, for reuse across sessions.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Rules only run against elements of the categories they name - there's
+      no need for a rule matching every category pair in the model, just
+      the ones that actually need joining.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="auto_coping.html"><span class="dir">&larr; Previous</span>Auto Coping</a>
+    <a class="next" href="cad_to_floor.html"><span class="dir">Next tool &rarr;</span>CAD to Floor / Part</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

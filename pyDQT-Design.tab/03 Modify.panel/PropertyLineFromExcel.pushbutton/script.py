@@ -31,6 +31,7 @@ __doc__ = ("Draw a closed Model Line boundary from Easting/Northing points in "
 # ==============================================================================
 # IMPORTS - aliased Revit DB import so WPF's Grid is not overwritten
 # ==============================================================================
+import os
 import re
 import zipfile
 import xml.etree.ElementTree as ET
@@ -53,6 +54,21 @@ from System.Windows.Controls import CheckBox, ComboBoxItem
 import Autodesk.Revit.DB as DB
 from Autodesk.Revit.DB import Transaction, TransactionGroup, UnitUtils
 from Autodesk.Revit.UI import TaskDialog
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -810,6 +826,8 @@ XAML_MAIN = """
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                     Margin="0,16,0,0">
+          <Button x:Name="BtnHelp" Content="? Help"
+                  Style="{StaticResource DqtButton}" Background="#FFFFFF"/>
           <Button x:Name="BtnCancel" Content="Cancel"
                   Style="{StaticResource DqtButton}"/>
           <Button x:Name="BtnApply" Content="Create"
@@ -873,6 +891,7 @@ class PropertyLineDialog(object):
         self.preview_text = self.window.FindName("PreviewText")
         self.btn_apply = self.window.FindName("BtnApply")
         self.btn_cancel = self.window.FindName("BtnCancel")
+        self.btn_help = self.window.FindName("BtnHelp")
 
         self.file_text.Text = filepath
 
@@ -960,6 +979,7 @@ class PropertyLineDialog(object):
         self.cmb_view.SelectionChanged += self._on_options_changed
         self.btn_apply.Click += self._on_apply
         self.btn_cancel.Click += self._on_cancel
+        self.btn_help.Click += self._on_help
 
         self._refresh()
 
@@ -1067,6 +1087,26 @@ class PropertyLineDialog(object):
     def _on_cancel(self, sender, args):
         self.confirmed = False
         self.window.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("property_line_from_excel.html"):
+            return
+        TaskDialog.Show(
+            "Property Line from Excel",
+            "Draws a closed loop of Model Lines - a boundary - from "
+            "Easting/Northing (or plain X/Y) coordinate tables found in an "
+            ".xlsx file.\n\n"
+            "- Pick the .xlsx file; the tool finds and lists the coordinate "
+            "table(s) it detects (a header shared by several boundaries "
+            "listed back-to-back is split one boundary per label prefix).\n"
+            "- Tick the boundaries to draw, pick the target view, and "
+            "optionally a Generic Annotation family to place at every point.\n"
+            "- Create draws the boundaries.\n\n"
+            "Revit's own PropertyLine element cannot be created through the "
+            "public API - this draws plain Model Lines instead, which is "
+            "enough to see and check the shape; promoting it into a real "
+            "Property Line still needs Revit's native Property Lines > "
+            "Edit Table dialog.")
 
     def show(self):
         self.window.ShowDialog()

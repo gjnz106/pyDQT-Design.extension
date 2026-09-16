@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Level Impact - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Level Impact</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Grids &amp; levels</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Level Impact</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Answers "if I change this Level's elevation, which elements move
+      with it?" <b>before</b> you actually do it. The change is simulated
+      inside a transaction that is always rolled back - nothing in the
+      model is modified.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <p>
+      Each model element's bounding box (Z) is recorded, the level's
+      elevation is bumped by the requested amount, the document is
+      regenerated so Revit's own constraint solver runs, and each
+      element's Z is measured again. Because it uses Revit's real
+      regeneration rather than reimplementing the hosting rules, it
+      catches indirect dependencies too.
+    </p>
+    <dl class="kv">
+      <dt class="v-green">Moves with level</dt><dd>the whole element shifted by the full amount (its elevation is driven by this level - e.g. a floor, a wall based here, a column based here, furniture hosted here)</dd>
+      <dt class="v-orange">Partially affected</dt><dd>only part of it moved (e.g. a wall whose BASE is on this level but TOP is on another - it gets taller/shorter, not just moved)</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the Level and the elevation change (mm, + = up).</li>
+      <li>Choose Scope: the entire model, or just the current selection.</li>
+      <li><b>Check Impact</b> reports the per-category breakdown and
+        selects the affected elements in the model so you can see exactly
+        what would move.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="level_swap.html"><span class="dir">&larr; Previous</span>Level Swap</a>
+    <a class="next" href="rehost_level.html"><span class="dir">Next tool &rarr;</span>Rehost Level</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

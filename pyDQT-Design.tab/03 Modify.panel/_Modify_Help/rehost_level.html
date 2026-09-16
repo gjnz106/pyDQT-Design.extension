@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rehost Level - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Rehost Level</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Grids &amp; levels</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Rehost Level</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Re-associates every element hosted on a SOURCE level onto a TARGET
+      level (at a different elevation) while keeping each element's exact
+      position and shape - so the old level can then be deleted safely.
+      Typical use: a new level was created at a corrected elevation and
+      everything on the old one needs to move onto it without shifting.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <p>
+      For each element with a level constraint pointing at the source
+      level (wall base/top, column base/top, floor/ceiling level,
+      level-based family instance, structural framing reference level, MEP
+      reference level), that constraint is repointed to the target level.
+      Because the two levels sit at different elevations, the element
+      would jump; the tool measures the real jump (via bounding-box Z)
+      after Revit regenerates and subtracts it back out of the element's
+      matching offset parameter - so the element ends up exactly where it
+      started, now hosted on the target level.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the Source level (what's being emptied) and the Target level.</li>
+      <li>Choose Scope: the entire model, or just the current selection.</li>
+      <li><b>Rehost</b> runs in one transaction - Ctrl+Z undoes everything.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      The old level is <b>not</b> deleted automatically - deleting a level
+      also deletes its plan views. The closing report tells you how many
+      elements, if any, still reference it, so you know when it's safe to
+      delete yourself.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="level_impact.html"><span class="dir">&larr; Previous</span>Level Impact</a>
+    <a class="next" href="property_line_from_excel.html"><span class="dir">Next tool &rarr;</span>Property Line from Excel</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
