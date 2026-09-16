@@ -6,6 +6,7 @@ CLEANED - Sheet List Only
 Copyright © Dang Quoc Truong (DQT)
 """
 
+import os
 import clr
 clr.AddReference('PresentationFramework')
 clr.AddReference('PresentationCore')
@@ -17,6 +18,25 @@ from System.Windows.Media import SolidColorBrush, Color, Brushes
 import System
 
 from core.config import Config
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Views-Sheets_Help folder in
+    the default browser. Returns True on success, False if the caller
+    should fall back to the in-app help text (e.g. the folder went
+    missing). script.py lives directly in the pushbutton folder, but this
+    module is one level deeper (lib/core/), so it needs one extra
+    dirname() to reach the panel root."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        path = os.path.join(panel_dir, "_Views-Sheets_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 
 class MainWindow(Window):
@@ -146,10 +166,11 @@ class MainWindow(Window):
         """Create footer with status and buttons"""
         footer = Grid()
         footer.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(1, GridUnitType.Star)))
+        footer.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(100)))
         footer.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(200)))
         footer.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(200)))
         footer.Margin = Thickness(20, 10, 20, 20)
-        
+
         # Status text
         from System.Windows.Controls import TextBlock
         self.status_text = TextBlock()
@@ -158,7 +179,18 @@ class MainWindow(Window):
         self.status_text.VerticalAlignment = System.Windows.VerticalAlignment.Center
         Grid.SetColumn(self.status_text, 0)
         footer.Children.Add(self.status_text)
-        
+
+        # Help button
+        help_btn = Button()
+        help_btn.Content = "? Help"
+        help_btn.Height = 40
+        help_btn.Margin = Thickness(0, 0, 10, 0)
+        help_btn.Background = Brushes.White
+        help_btn.FontSize = 14
+        help_btn.Click += self.on_help_click
+        Grid.SetColumn(help_btn, 1)
+        footer.Children.Add(help_btn)
+
         # Apply button
         apply_btn = Button()
         apply_btn.Content = "Apply"
@@ -170,9 +202,9 @@ class MainWindow(Window):
         apply_btn.FontSize = 14
         apply_btn.FontWeight = System.Windows.FontWeights.Bold
         apply_btn.Click += self.on_apply_click
-        Grid.SetColumn(apply_btn, 1)
+        Grid.SetColumn(apply_btn, 2)
         footer.Children.Add(apply_btn)
-        
+
         # Close button
         close_btn = Button()
         close_btn.Content = "Close"
@@ -180,9 +212,9 @@ class MainWindow(Window):
         close_btn.Background = Brushes.LightGray
         close_btn.FontSize = 14
         close_btn.Click += self.on_close_click
-        Grid.SetColumn(close_btn, 2)
+        Grid.SetColumn(close_btn, 3)
         footer.Children.Add(close_btn)
-        
+
         return footer
     
     def update_status(self, message):
@@ -303,5 +335,23 @@ class MainWindow(Window):
             )
             if result != MessageBoxResult.Yes:
                 return
-        
+
         self.Close()
+
+    def on_help_click(self, sender, args):
+        if _open_help_page("sheet_manager_advanced.html"):
+            return
+        from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
+        MessageBox.Show(
+            "Manage project sheets in one grid, with batch tools "
+            "alongside the ordinary create/rename/delete actions.\n\n"
+            "- Create Sheet, Duplicate, Rename (batch), Delete on the "
+            "checked/selected sheets.\n"
+            "- Excel exports the current sheet list; Report is a quick "
+            "export variant.\n"
+            "- Place Views opens the views-onto-sheet placement dialog.\n"
+            "- Parameters lets you add extra parameter columns to the grid.\n"
+            "- Select All / Clear All / Refresh manage the grid; Apply "
+            "commits pending edits, Close exits (it warns first if there "
+            "are unsaved changes).",
+            "Sheet Manager - DQT", MessageBoxButton.OK, MessageBoxImage.Information)

@@ -7,6 +7,7 @@ Copyright: Dang Quoc Truong (DQT)
 __title__ = "Advanced\nView Manager"
 __author__ = "Dang Quoc Truong (DQT)"
 
+import os
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -36,6 +37,22 @@ def _eid_int(eid):
         return eid.Value
     except AttributeError:
         return eid.IntegerValue
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Views-Sheets_Help folder in
+    the default browser. Returns True on success, False if the caller
+    should fall back to the in-app help text (e.g. the folder went
+    missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Views-Sheets_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 def _make_eid(int_val):
     """Create ElementId from integer - compatible with Revit 2024-2027.
@@ -1094,17 +1111,25 @@ class AdvancedViewManagerWindow(Window):
         del_btn.Foreground = Brushes.White
         del_btn.Click += self._on_delete
         
+        help_btn = Button()
+        help_btn.Content = "? Help"
+        help_btn.Width = 70
+        help_btn.Height = 35
+        help_btn.Margin = Thickness(0, 0, 10, 0)
+        help_btn.Click += self._on_help
+
         close_btn = Button()
         close_btn.Content = "Close"
         close_btn.Width = 100
         close_btn.Height = 35
         close_btn.Click += self._on_close
-        
+
         stack.Children.Add(excel_btn)
         stack.Children.Add(refresh_btn)  # NEW!
         stack.Children.Add(rename_btn)
         stack.Children.Add(dup_btn)
         stack.Children.Add(del_btn)
+        stack.Children.Add(help_btn)
         stack.Children.Add(close_btn)
         
         border.Child = stack
@@ -2795,6 +2820,24 @@ class AdvancedViewManagerWindow(Window):
     def _on_close(self, sender, args):
         """Close"""
         self.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("view_manager_advanced.html"):
+            return
+        MessageBox.Show(
+            "Manage project views in one grid, with batch tools alongside "
+            "the ordinary create/rename/delete actions.\n\n"
+            "- Search filters by name; Filter narrows by view type (All "
+            "Sheets, Floor Plan, Ceiling Plan, Section, Elevation, 3D View).\n"
+            "- Select All / Clear All manage the checked rows.\n"
+            "- More Filters: Has Template (All/With/Without) and On Sheets "
+            "(All/On Sheets/Not On Sheets).\n"
+            "- Excel exports the current view list; Refresh re-scans the "
+            "model.\n"
+            "- Batch Rename opens a find/replace-style rename dialog for "
+            "the checked views.\n"
+            "- Duplicate and Delete act on the checked views; Close exits.",
+            "Advanced View Manager - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
     
     def _on_header_right_click(self, sender, args):
         """Show context menu on header right-click"""
