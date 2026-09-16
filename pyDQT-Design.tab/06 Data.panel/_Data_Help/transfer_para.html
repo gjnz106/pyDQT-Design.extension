@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transfer Parameter Value - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Transfer Parameter Value</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Parameters</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Transfer Parameter Value</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Copies values from one parameter into another parameter, within the
+      same elements, for a chosen category. Supports all StorageTypes
+      (String, Double, Integer, ElementId) and converts between them where
+      possible.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Layout</h2>
+    <dl class="kv">
+      <dt class="v-dark">Category</dt><dd>scopes which elements are read/written; the element count updates next to it</dd>
+      <dt class="v-blue">SOURCE Parameter</dt><dd>the parameter to read from - search box filters the list</dd>
+      <dt class="v-green">TARGET Parameter</dt><dd>the parameter to write to - search box filters the list</dd>
+      <dt class="v-gold">Preview</dt><dd>shows each element's current Source/Target value before you commit</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick a Category to scope the elements.</li>
+      <li>Choose a Source Parameter and a Target Parameter from that
+        category's available parameters.</li>
+      <li><b>Refresh Preview</b> lists what each element's transfer will
+        look like.</li>
+      <li><b>Transfer Values</b> writes Source's value into Target for
+        every listed element.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      A StorageType mismatch (e.g. Text source into a Number target) is
+      converted automatically where the value is convertible; values that
+      can't convert are skipped and counted separately in the results.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="next" href="foundation_volume.html"><span class="dir">Next tool &rarr;</span>Foundation Volume</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

@@ -19,6 +19,7 @@ __doc__ = "Transfer parameter values between parameters within the same elements
 # IMPORTS
 # =============================================================================
 import clr
+import os
 import sys
 import traceback
 
@@ -46,6 +47,21 @@ from Autodesk.Revit.DB import (
     StorageType, Transaction, ElementId,
     UnitUtils
 )
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
 
 doc = revit.doc
 output = script.get_output()
@@ -486,6 +502,7 @@ def _build_xaml():
         <Border Grid.Row="4" Padding="18,10">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button x:Name="btnHelp" Content="? Help" Margin="0,0,8,0"/>
                     <Button x:Name="btnTransfer" Content="Transfer Values" Margin="0,0,8,0"/>
                     <Button x:Name="btnClose" Content="Close"/>
                 </StackPanel>
@@ -671,12 +688,14 @@ class TransferParamWindow(object):
         
         self.btn_transfer = self.window.FindName("btnTransfer")
         self.btn_close = self.window.FindName("btnClose")
+        self.btn_help = self.window.FindName("btnHelp")
         self.txt_summary = self.window.FindName("txtSummary")
-        
+
         # Apply button styles via code-behind (avoids XAML StaticResource issues)
         _style_button_primary(self.btn_transfer)
         _style_button_secondary(self.btn_preview)
         _style_button_secondary(self.btn_close)
+        _style_button_secondary(self.btn_help)
         
         # Build DataGrid columns via code-behind (avoids XAML Binding curly-brace issues)
         self._setup_datagrid_columns()
@@ -706,6 +725,7 @@ class TransferParamWindow(object):
         self.btn_preview.Click += self._on_preview
         self.btn_transfer.Click += self._on_transfer
         self.btn_close.Click += self._on_close
+        self.btn_help.Click += self._on_help
         
         # Initial load
         self._on_category_changed(None, None)
@@ -1007,6 +1027,28 @@ class TransferParamWindow(object):
     # -------------------------------------------------------------------------
     def _on_close(self, sender, args):
         self.window.Close()
+
+    # -------------------------------------------------------------------------
+    # HELP
+    # -------------------------------------------------------------------------
+    def _on_help(self, sender, args):
+        if _open_help_page("transfer_para.html"):
+            return
+        MessageBox.Show(
+            "Transfers parameter values from one parameter to another within "
+            "the same elements.\n\n"
+            "- Pick a Category to scope the elements.\n"
+            "- Choose a Source Parameter and a Target Parameter from that "
+            "category's available parameters (Search boxes filter both "
+            "lists).\n"
+            "- Preview shows the value each element will copy before you "
+            "commit.\n"
+            "- Transfer Values writes Source's value into Target for every "
+            "listed element.\n\n"
+            "Supports all StorageTypes (String, Double, Integer, ElementId) "
+            "and converts between them where possible.",
+            "Transfer Parameter Value - DQT",
+            MessageBoxButton.OK, MessageBoxImage.Information)
 
 
 # =============================================================================

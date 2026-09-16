@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>In-Place Volume - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>In-Place Volume</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Volume write-back</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>In-Place Volume</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Writes each In-Place family instance's computed volume (m&sup3;) into
+      a selected instance parameter - e.g. for rock armour or precast unit
+      BOQ takeoff, where the mass is modeled as an in-place family.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Scope</h2>
+    <dl class="kv">
+      <dt class="v-blue">With a selection</dt><dd>only the In-Place elements in your current selection</dd>
+      <dt class="v-grey">With nothing selected</dt><dd>every In-Place family instance in the document</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Optionally pre-select specific In-Place elements before running
+        the tool - otherwise it scopes to the whole document.</li>
+      <li>Search and pick the target parameter from the list - it must be
+        a writable instance parameter already present.</li>
+      <li><b>Write Volume</b> writes each element's computed volume (m&sup3;)
+        into that parameter.</li>
+      <li>Check the status panel for the success count and any skip
+        reasons.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Like Foundation Volume, this only writes into a parameter that
+      already exists - create it first if it isn't on the family yet.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="foundation_volume.html"><span class="dir">&larr; Previous</span>Foundation Volume</a>
+    <a class="next" href="contains_manager.html"><span class="dir">Next tool &rarr;</span>Contains Manager</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

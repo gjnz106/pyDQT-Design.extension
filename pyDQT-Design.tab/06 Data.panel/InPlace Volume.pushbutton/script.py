@@ -25,11 +25,28 @@ clr.AddReference('PresentationFramework')
 clr.AddReference('PresentationCore')
 clr.AddReference('WindowsBase')
 
+import os
 import System
 from System.IO import MemoryStream
 from System.Text import Encoding
 from System.Windows.Markup import XamlReader
+from System.Windows import MessageBox, MessageBoxButton, MessageBoxImage
 from System.Windows.Controls import ListBoxItem
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 import Autodesk.Revit.DB as DB
 from Autodesk.Revit.DB import (
@@ -309,13 +326,18 @@ XAML_TEMPLATE = """
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="8"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0" Text="Dang Quoc Truong - DQT (c) 2026"
                      FontSize="10" Foreground="#AAAAAA" VerticalAlignment="Center"/>
-          <Button x:Name="RunButton" Grid.Column="1"
+          <Button x:Name="HelpButton" Grid.Column="1"
+                  Content="? Help" Width="70"
+                  Style="{StaticResource SecondaryBtn}"/>
+          <Button x:Name="RunButton" Grid.Column="3"
                   Content="▶  Write Volume" Width="140"
                   Style="{StaticResource PrimaryBtn}"/>
-          <Button x:Name="CloseButton" Grid.Column="3"
+          <Button x:Name="CloseButton" Grid.Column="5"
                   Content="Close" Width="80"
                   Style="{StaticResource SecondaryBtn}"/>
         </Grid>
@@ -355,6 +377,7 @@ class InPlaceVolumeDialog(object):
         self._status_txt = self.window.FindName("StatusText")
         self._run_btn = self.window.FindName("RunButton")
         self._close_btn = self.window.FindName("CloseButton")
+        self._help_btn = self.window.FindName("HelpButton")
 
         # Init
         self._count_lbl.Text = "{0} element(s)".format(len(self.elements))
@@ -369,6 +392,7 @@ class InPlaceVolumeDialog(object):
         self._param_list.SelectionChanged += self._on_selection_changed
         self._run_btn.Click += self._on_run
         self._close_btn.Click += self._on_close
+        self._help_btn.Click += self._on_help
 
     # ── List helpers ──────────────────────────────────────────────────────
     def _populate_list(self, names):
@@ -529,6 +553,24 @@ class InPlaceVolumeDialog(object):
 
     def _on_close(self, sender, e):
         self.window.Close()
+
+    def _on_help(self, sender, e):
+        if _open_help_page("inplace_volume.html"):
+            return
+        MessageBox.Show(
+            "Writes each In-Place family instance's computed volume into "
+            "a selected instance parameter - e.g. for rock armour / "
+            "precast unit BOQ takeoff.\n\n"
+            "- Scope: the In-Place elements in your current selection, or "
+            "every In-Place instance in the document if nothing is "
+            "selected.\n"
+            "- Search and pick the target parameter from the list (must "
+            "be a writable instance parameter already present).\n"
+            "- Write Volume writes each element's computed volume (m3) "
+            "into that parameter.\n"
+            "- The status panel reports how many succeeded, and why any "
+            "were skipped.",
+            "In-Place Volume Writer - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
 
     def show(self):
         self.window.ShowDialog()

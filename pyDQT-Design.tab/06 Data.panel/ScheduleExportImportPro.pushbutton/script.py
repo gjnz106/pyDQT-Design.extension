@@ -123,6 +123,22 @@ RED = "#FFFF0000"
 GREEN = "#FF008000"
 COPYRIGHT = "Copyright (c) 2025 by Dang Quoc Truong (DQT)"
 
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 DEBUG_LOG = []
 UPDATE_LOG = []
 
@@ -2019,7 +2035,12 @@ class MainWindow(Window):
         self.debug_btn.Width = 100
         self.debug_btn.Margin = Thickness(10, 0, 0, 0)
         left_panel.Children.Add(self.debug_btn)
-        
+
+        self.help_btn = self._btn("? Help", self._on_help)
+        self.help_btn.Width = 80
+        self.help_btn.Margin = Thickness(10, 0, 0, 0)
+        left_panel.Children.Add(self.help_btn)
+
         btn_row.Children.Add(left_panel)
         panel.Children.Add(btn_row)
         
@@ -2165,7 +2186,25 @@ class MainWindow(Window):
         msg += "\n".join(UPDATE_LOG[-25:]) if UPDATE_LOG else "(none)"
         
         MessageBox.Show(msg, "Debug Info", MessageBoxButtons.OK, MessageBoxIcon.Information)
-    
+
+    def _on_help(self, s, e):
+        if _open_help_page("schedule_export_import_pro.html"):
+            return
+        MessageBox.Show(
+            "Exports a schedule's live element data to Excel for offline "
+            "editing, then imports it back and writes the changes into the "
+            "model - reading straight from elements, not from schedule "
+            "cells, so it also works with calculated/read-only fields.\n\n"
+            "- Pick a schedule, Preview to see its rows, then Export to "
+            "Excel to save an editable copy.\n"
+            "- Edit values in Excel, then Import Excel to load it back and "
+            "Update Model to write the changed cells.\n"
+            "- Keep Formatting exports a read-only copy that mirrors the "
+            "schedule's own appearance/calculated fields.\n"
+            "- Debug Info shows the last export/import/update log.",
+            "Schedule Link Pro - DQT",
+            MessageBoxButtons.OK, MessageBoxIcon.Information)
+
     def _on_preview(self, s, e):
         global DEBUG_LOG
         DEBUG_LOG = []

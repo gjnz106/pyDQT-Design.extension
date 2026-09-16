@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Foundation Volume - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Foundation Volume</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Volume write-back</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Foundation Volume</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Writes Revit's computed volume into a selected instance parameter on
+      every Structural Foundation element in the active document - useful
+      for BOQ takeoff parameters that need a plain number rather than a
+      schedule-calculated field.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Layout</h2>
+    <dl class="kv">
+      <dt class="v-dark">Search</dt><dd>filters the parameter list by name</dd>
+      <dt class="v-blue">Parameter list</dt><dd>every writable instance parameter already present on the foundations</dd>
+      <dt class="v-gold">Status panel</dt><dd>reports how many elements succeeded, and why any were skipped</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Search and pick the target parameter from the list - it must be
+        a writable instance parameter already present on the
+        foundations.</li>
+      <li><b>Write Volume</b> writes each foundation's computed volume
+        (HOST_VOLUME_COMPUTED) into that parameter.</li>
+      <li>Check the status panel for the success count and any skip
+        reasons (parameter not found, read-only, or an error).</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      This tool only writes to a parameter that already exists on the
+      foundations - it doesn't create shared parameters. Add the
+      parameter first (e.g. with Parameter Loader) if it isn't there yet.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="transfer_para.html"><span class="dir">&larr; Previous</span>Transfer Parameter Value</a>
+    <a class="next" href="inplace_volume.html"><span class="dir">Next tool &rarr;</span>In-Place Volume</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

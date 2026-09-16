@@ -8,6 +8,7 @@ __title__ = "Contains\nManager"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Find elements in Rooms/Areas/Spaces and assign parameter values"
 
+import os
 import clr
 clr.AddReference('System')
 clr.AddReference('PresentationFramework')
@@ -34,6 +35,21 @@ from Autodesk.Revit.UI import TaskDialog
 
 uidoc = __revit__.ActiveUIDocument
 doc = uidoc.Document
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
 
 # Revit 2024-2027 compatibility: ElementId.IntegerValue removed in 2026+, use .Value
 def _eid_int(eid):
@@ -1766,6 +1782,7 @@ class ContainsWindow(Window):
         sp.Children.Add(self._btn("Find", SUCCESS, self._find, False))
         sp.Children.Add(self._btn("Set Parameter Value", PRIMARY, self._set, False))
         sp.Children.Add(self._btn("Select", "#FFAB91", self._sel, False))
+        sp.Children.Add(self._btn("? Help", WHITE, self._help, True))
         sp.Children.Add(self._btn("Close", WHITE, self._close, True))
         bd.Child = sp
         return bd
@@ -2231,6 +2248,23 @@ class ContainsWindow(Window):
         uidoc.Selection.SetElementIds(ids)
         TaskDialog.Show("Select", "Selected " + str(ids.Count) + " element(s).")
     
+    def _help(self, s, e):
+        if _open_help_page("contains_manager.html"):
+            return
+        TaskDialog.Show(
+            "Contains Manager",
+            "Finds elements physically inside Rooms/Areas/Spaces/Zones/"
+            "Masses/Scope Boxes and lets you assign parameter values to "
+            "them in bulk.\n\n"
+            "- Pick the spatial container type (Rooms/Areas/Spaces/etc.), "
+            "then Find to scan which elements fall inside each one.\n"
+            "- Visualize highlights the found groups; Select adds them to "
+            "the active Revit selection.\n"
+            "- Set Parameter Value writes a value (built from the "
+            "container's own parameters, e.g. Number_Name) into a chosen "
+            "parameter on every found element.\n"
+            "- Reset clears the current results and view-only scoping.")
+
     def _close(self, s, e):
         self.Close()
 

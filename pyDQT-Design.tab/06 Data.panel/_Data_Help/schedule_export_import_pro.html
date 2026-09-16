@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Schedule Link Pro - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Schedule Link Pro</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Excel round-trip</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Schedule Link Pro</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Exports a schedule's live element data to Excel for offline editing,
+      then imports it back and writes the changed cells into the model -
+      reading straight from the underlying elements rather than the
+      schedule's own cells, so it works with calculated and read-only
+      fields too (DiRoots-style).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Layout</h2>
+    <dl class="kv">
+      <dt class="v-dark">Schedule picker</dt><dd>choose the schedule to work with</dd>
+      <dt class="v-blue">Preview</dt><dd>loads the schedule's rows into the on-screen grid</dd>
+      <dt class="v-gold">Keep Formatting</dt><dd>exports a read-only copy that mirrors the schedule's own appearance and calculated fields</dd>
+      <dt class="v-grey">Debug Info</dt><dd>shows the last export/import/update log</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick a schedule, then <b>Preview</b> to see its rows in the
+        grid.</li>
+      <li><b>Export to Excel</b> saves an editable copy of the visible
+        data.</li>
+      <li>Edit values in Excel and save the file.</li>
+      <li><b>Import Excel</b> loads the edited file back and highlights
+        the changed cells.</li>
+      <li><b>Update Model</b> writes the changed cells into the real
+        elements.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      If Office Excel Interop isn't installed, the tool falls back to a
+      native .xlsx reader/writer (zipfile + XML) - export and import still
+      work, just without any COM dependency on Excel being installed.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="bcf_reader.html"><span class="dir">&larr; Previous</span>BCF Reader</a>
+    <a class="next" href="schedule_copy.html"><span class="dir">Next tool &rarr;</span>Schedule Duplicator</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
