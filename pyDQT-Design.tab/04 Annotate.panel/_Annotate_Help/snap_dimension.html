@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Snap to Grid - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Snap to Grid</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Snap &amp; align</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Snap to Grid</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Nudges walls, columns, and/or beams so their dimensioned distance to
+      the nearest grid becomes a clean round number, within a tolerance
+      you set - cleans up "2425.042 mm" style offsets left over from
+      import/coordination work.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Options</h2>
+    <dl class="kv">
+      <dt class="v-dark">Scope</dt><dd>Entire Project or Current Selection</dd>
+      <dt class="v-gold">Category</dt><dd>All (Walls+Columns+Beams), or any single/pair combination</dd>
+      <dt class="v-green">Precision</dt><dd>the rounding increment (e.g. round to 5 mm)</dd>
+      <dt class="v-blue">Max distance</dt><dd>caps how far an element may move to snap</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Set Scope, Category, Precision, and Max distance.</li>
+      <li><b>Scan</b> lists every element with its current and proposed
+        snapped position; tick the ones to include, or use <b>Select All</b>.</li>
+      <li><b>Highlight Selected</b> selects the ticked elements in Revit to
+        verify them before committing.</li>
+      <li><b>Apply Snap</b> moves the ticked elements; 'Draw rounded line'
+        optionally draws a detail line at the new snapped position.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="dim_wall.html"><span class="dir">&larr; Previous</span>Wall Dimensioning</a>
+    <a class="next" href="merge_fill_region.html"><span class="dir">Next tool &rarr;</span>Merge Fill Region</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

@@ -10,6 +10,7 @@ Copyright by Dang Quoc Truong - DQT (c) 2026
 __title__ = "Renumber\nAlong Spline"
 __author__ = "DQT"
 
+import os
 import clr
 import System
 from System.Collections.Generic import List
@@ -32,6 +33,21 @@ from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 
 from pyrevit import revit, HOST_APP
 from pyrevit import forms, script
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 # ============================================================================
 # REVIT VERSION COMPATIBILITY
@@ -399,6 +415,33 @@ def show_parameter_dialog(param_names, cat_name):
     footer.Orientation = Orientation.Horizontal
     footer.HorizontalAlignment = HorizontalAlignment.Right
     footer.Margin = Thickness(16, 6, 16, 14)
+
+    btn_help = Button()
+    btn_help.Content = "  ? Help  "
+    btn_help.Padding = Thickness(16, 6, 16, 6)
+    btn_help.Background = _BC.ConvertFromString("#FFFFFF")
+    btn_help.Foreground = DQT_DARK
+    btn_help.Margin = Thickness(0, 0, 8, 0)
+
+    def on_help_click(sender, args):
+        if _open_help_page("renumber_by_spline.html"):
+            return
+        forms.alert(
+            "Renumbers elements of a chosen category by their order along a "
+            "picked spline/curve, writing a sequential value into a "
+            "parameter of your choice.\n\n"
+            "- Category: which element category to renumber.\n"
+            "- Parameter to Write: the text/number parameter that receives "
+            "the new value.\n"
+            "- Prefix: text placed before the number (e.g. 'X00_').\n"
+            "- Leading Zeros: how many digits the number is padded to.\n"
+            "- Starting Number: the first value used.\n\n"
+            "Pick the spline/curve when prompted - elements are ordered by "
+            "how far along that curve they project.",
+            title="DQT - Renumber Along Spline")
+
+    btn_help.Click += on_help_click
+    footer.Children.Add(btn_help)
 
     btn = Button()
     btn.Content = "  Renumber  "

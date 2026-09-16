@@ -9,6 +9,7 @@ Author: Dang Quoc Truong - DQT (c) 2026
 __title__ = "Copy\nAnnotations"
 __author__ = "DQT"
 
+import os
 import clr
 import System
 clr.AddReference('System')
@@ -273,6 +274,21 @@ def section(text):
     t.Margin = Thickness(0, 10, 0, 4)
     return t
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # ==============================================================================
 # WINDOW
 # ==============================================================================
@@ -335,6 +351,11 @@ class CopyAnnotationsWindow(Window):
         bp = StackPanel()
         bp.Orientation = Orientation.Horizontal
         bp.HorizontalAlignment = HorizontalAlignment.Right
+
+        bh = btn("? Help", 60, 30)
+        bh.Margin = Thickness(0, 0, 8, 0)
+        bh.Click += self._on_help
+        bp.Children.Add(bh)
 
         bc = btn("Close", 70, 30)
         bc.Margin = Thickness(0, 0, 8, 0)
@@ -773,6 +794,21 @@ class CopyAnnotationsWindow(Window):
             c.IsChecked = False
     def _close(self, s, e):
         self.Close()
+
+    def _on_help(self, s, e):
+        if _open_help_page("copy_annotation.html"):
+            return
+        forms.alert(
+            "Copies annotations (dimensions, tags, text notes, detail "
+            "components) between views, including across different open "
+            "documents.\n\n"
+            "- Pick the Source and Destination document.\n"
+            "- Swap flips source and destination.\n"
+            "- Tick the categories to copy (All/None helpers included).\n"
+            "- Tick the source views to scan, then Scan Annotations to see "
+            "how many were found per matched destination view.\n"
+            "- Copy Annotations transfers them, view by matched view.",
+            title="DQT - Copy Annotations")
 
     def _copy_click(self, s, e):
         try:

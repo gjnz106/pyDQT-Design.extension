@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wall Dimensioning - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Wall Dimensioning</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Auto dimension</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Wall Dimensioning</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Simple, safe auto-dimensioning for walls - select walls and it
+      creates a dimension chain between wall faces (or other references,
+      depending on mode). Works in Floor Plan or Section views.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Modes (tick any combination)</h2>
+    <dl class="kv">
+      <dt class="v-dark">Wall Faces</dt><dd>chain between parallel walls' faces</dd>
+      <dt class="v-gold">Wall Thickness</dt><dd>each wall dimensioned individually</dd>
+      <dt class="v-green">Wall Thickness + Nearest Grid</dt><dd>thickness plus a reference to the nearest grid</dd>
+      <dt class="v-blue">Wall Center to Nearest Grid</dt><dd>wall centerline to the nearest grid</dd>
+      <dt class="v-purple">Linked Wall Thickness + Nearest Grid</dt><dd>same, for walls in a linked model</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Open a Floor Plan or Section view.</li>
+      <li>Run the tool and tick the mode(s) to create.</li>
+      <li>For host-wall modes: select walls first, or pick them when prompted.</li>
+      <li>Enter the offset distance (mm) for the dimension line.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="dim_column.html"><span class="dir">&larr; Previous</span>Auto Dimension Columns</a>
+    <a class="next" href="snap_dimension.html"><span class="dir">Next tool &rarr;</span>Snap to Grid</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

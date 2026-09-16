@@ -36,6 +36,7 @@ __title__ = "Snap to\nGrid"
 __author__ = "DQT"
 __doc__ = "Round wall/column/beam centerline offset from grid to whole mm"
 
+import os
 import clr
 import math
 
@@ -498,6 +499,7 @@ XAML_STR = """
                 </Grid.ColumnDefinitions>
                 <Button x:Name="btnScan" Grid.Column="0" Content="Scan" Style="{StaticResource BtnS}" Margin="0,0,8,0"/>
                 <Button x:Name="btnHL" Grid.Column="1" Content="Highlight Selected" Style="{StaticResource BtnS}"/>
+                <Button x:Name="btnHelp" Grid.Column="2" Content="? Help" Style="{StaticResource BtnS}" HorizontalAlignment="Left" Margin="8,0,0,0"/>
                 <Button x:Name="btnApply" Grid.Column="3" Content="Apply Snap" Style="{StaticResource BtnP}" Margin="0,0,8,0"/>
                 <Button x:Name="btnClose" Grid.Column="4" Content="Close" Style="{StaticResource BtnS}"/>
             </Grid>
@@ -505,6 +507,21 @@ XAML_STR = """
     </Grid>
 </Window>
 """
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Annotate_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Annotate_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 
 class SI(object):
@@ -549,6 +566,7 @@ class MainWin(object):
         self.chkLine = self.w.FindName("chkLine")
         self.w.FindName("btnScan").Click += self._scan
         self.w.FindName("btnHL").Click += self._hl
+        self.w.FindName("btnHelp").Click += self._on_help
         self.w.FindName("btnApply").Click += self._apply
         self.w.FindName("btnClose").Click += lambda s, e: self.w.Close()
         self.w.FindName("chkAll").Checked += lambda s, e: self._tog(True)
@@ -780,6 +798,25 @@ class MainWin(object):
         if ids.Count > 0:
             uidoc.Selection.SetElementIds(ids)
             self.txtSt.Text = "Highlighted {}.".format(ids.Count)
+
+    def _on_help(self, s, a):
+        if _open_help_page("snap_dimension.html"):
+            return
+        TaskDialog.Show(
+            "DQT - Snap to Grid",
+            "Nudges walls, columns, and/or beams so their dimensioned "
+            "distance to the nearest grid becomes a clean round number, "
+            "within a tolerance you set.\n\n"
+            "- Scope: Entire Project or Current Selection.\n"
+            "- Category: All / Walls / Columns / Beams, or any pair.\n"
+            "- Precision sets the rounding increment (e.g. round to 5 mm); "
+            "Max distance caps how far an element may move to snap.\n"
+            "- Scan lists every element with its current and proposed "
+            "snapped position; tick the ones to include (or Select All).\n"
+            "- Highlight Selected selects the ticked elements in Revit to "
+            "verify them before committing.\n"
+            "- Apply Snap moves the ticked elements; 'Draw rounded line' "
+            "optionally draws a detail line at the new snapped position.")
 
     def _solve_move(self, cons):
         """Find the single translation that satisfies every snap constraint

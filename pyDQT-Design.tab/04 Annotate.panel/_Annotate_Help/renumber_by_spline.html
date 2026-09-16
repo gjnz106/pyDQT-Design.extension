@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Renumber Along Spline - Annotate Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Renumber Along Spline</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Numbering</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Annotate Toolset</a><span>&rsaquo;</span>Renumber Along Spline</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Renumbers elements of a chosen category by their order along a
+      picked spline/curve, writing a sequential value into a parameter of
+      your choice - useful for numbering piles, columns, or grid-following
+      elements in a consistent physical order instead of Revit's creation
+      order.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Settings</h2>
+    <dl class="kv">
+      <dt class="v-dark">Category</dt><dd>which element category to renumber</dd>
+      <dt class="v-gold">Parameter to Write</dt><dd>the text/number parameter that receives the new value</dd>
+      <dt class="v-green">Prefix</dt><dd>text placed before the number (e.g. "X00_")</dd>
+      <dt class="v-blue">Leading Zeros</dt><dd>how many digits the number is padded to</dd>
+      <dt class="v-purple">Starting Number</dt><dd>the first value used</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool and pick a Category.</li>
+      <li>Set the Parameter, Prefix, Leading Zeros, and Starting Number.</li>
+      <li>Pick the spline/curve to order elements along - elements are
+        ordered by how far along that curve they project.</li>
+      <li>Click <b>Renumber</b>.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="merge_fill_region.html"><span class="dir">&larr; Previous</span>Merge Fill Region</a>
+    <a class="next" href="rotate_tag_to_grid.html"><span class="dir">Next tool &rarr;</span>Rotate Tag to Grid</a>
+  </div>
+  <footer class="site">Annotate Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
