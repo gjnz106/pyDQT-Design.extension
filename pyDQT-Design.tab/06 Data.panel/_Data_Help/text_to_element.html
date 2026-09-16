@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Text to Element - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Text to Element</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Annotation to parameter</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Text to Element</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Transfers the text content of Text Notes into a parameter on model
+      elements that overlap them in the active view - useful for
+      auto-assigning names, area labels, or other annotations that were
+      placed as plain text instead of a real parameter value.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li><b>Step 1:</b> pick text notes by selecting them, or use every
+        text note already in the current view.</li>
+      <li><b>Step 2:</b> pick the target category (Walls, Floors, Rooms,
+        Doors, Furniture, and more).</li>
+      <li><b>Step 3:</b> pick the target parameter - only writable text
+        parameters found on a sample of the target elements are
+        listed.</li>
+      <li><b>Step 4:</b> set the intersection tolerance in millimeters
+        (default 150mm) - how close a text note's bounding box needs to
+        be to an element's to count as a match.</li>
+      <li>Review the preview of matches, confirm, and the tool writes
+        each note's text into the chosen parameter on its matched
+        element.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Matching is done by 2D bounding-box overlap in the active view, not
+      by exact geometry - if you get zero matches, try a larger
+      tolerance, since text placement rarely lines up pixel-perfect with
+      an element's box.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="schedule_copy.html"><span class="dir">&larr; Previous</span>Schedule Duplicator</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

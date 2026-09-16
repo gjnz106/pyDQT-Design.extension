@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BCF Reader - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>BCF Reader</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">BCF / issue tracking</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>BCF Reader</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Reads BCF/BCFzip issue files - e.g. exported from IFC Delta Viewer -
+      and lets you navigate each issue directly in the active Revit model,
+      with per-issue viewpoints, comments, and resolved tracking.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Stat cards</h2>
+    <dl class="kv">
+      <dt class="v-dark">Total Issues</dt><dd>issues loaded from the BCF file</dd>
+      <dt class="v-green">Added</dt><dd>issues flagged as newly added elements</dd>
+      <dt class="v-red">Removed</dt><dd>issues flagged as removed elements</dd>
+      <dt class="v-orange">Modified</dt><dd>issues flagged as modified elements</dd>
+      <dt class="v-green">Resolved</dt><dd>issues you've marked resolved</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Toolbar</h2>
+    <dl class="kv">
+      <dt class="v-gold">Open BCF</dt><dd>loads a .bcf/.bcfzip file and lists its issues as cards</dd>
+      <dt class="v-dark">Zoom to Issue</dt><dd>flies the active view to the selected issue's viewpoint and section box</dd>
+      <dt class="v-dark">Export CSV / Export BCF (Resolved) / Export PDF</dt><dd>save the current (filtered) issue list</dd>
+      <dt class="v-dark">Filter chips</dt><dd>All / Added / Removed / Modified narrow the card list</dd>
+      <dt class="v-dark">Unresolved / Resolved chips</dt><dd>further narrow by resolved status</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li><b>Open BCF</b> and pick a .bcf/.bcfzip file to load its
+        issues.</li>
+      <li>Click an issue card, then <b>Zoom to Issue</b> to jump the
+        active Revit view to that issue's saved viewpoint.</li>
+      <li>Add a comment and mark the issue resolved once it's addressed -
+        the Resolved chip tracks it going forward.</li>
+      <li>Use the Filter and Resolved/Unresolved chips to work through
+        the list, then Export CSV/BCF/PDF to share progress.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      This tool opens a modeless window (pyRevit's WPFWindow pattern), so
+      you can keep it open while navigating and editing the model.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="room_data_collector.html"><span class="dir">&larr; Previous</span>Room Data Collector</a>
+    <a class="next" href="schedule_export_import_pro.html"><span class="dir">Next tool &rarr;</span>Schedule Link Pro</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

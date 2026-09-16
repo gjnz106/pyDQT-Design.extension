@@ -111,6 +111,21 @@ LABEL_COLORS = {
 METERS_TO_FEET = 3.2808398950131233
 
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -717,6 +732,10 @@ class BCFManagerWindow(WPFWindow):
             pass
         try:
             self.btnUnresolved.Click += lambda s, e: self.set_filter("UNRESOLVED")
+        except AttributeError:
+            pass
+        try:
+            self.btnHelp.Click += self.on_help_click
         except AttributeError:
             pass
 
@@ -1457,6 +1476,22 @@ class BCFManagerWindow(WPFWindow):
             self.export_summary_csv()
         except Exception as ex:
             TaskDialog.Show("DQT BCF Reader", "Export failed:\n" + str(ex))
+
+    def on_help_click(self, sender, e):
+        if _open_help_page("bcf_reader.html"):
+            return
+        TaskDialog.Show(
+            "DQT BCF Reader",
+            "Reads BCF/BCFzip issue files (e.g. exported from IFC Delta "
+            "Viewer) and lets you navigate each issue in the model.\n\n"
+            "- Open BCF loads a .bcf/.bcfzip file and lists its issues as "
+            "cards, color-coded Added/Removed/Modified.\n"
+            "- Click a card, then Zoom to Issue to fly the active view to "
+            "that issue's viewpoint and section box.\n"
+            "- Export CSV / Export BCF (Resolved) / Export PDF save the "
+            "current (filtered) issue list.\n"
+            "- The Filter chips and the Resolved/Unresolved chips narrow "
+            "the list; a card can be marked resolved with a comment.")
 
     # ------------------------------------------------------------------
     # Dispatch helper

@@ -18,6 +18,7 @@ __title__ = "Room Data\nCollector"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Collect element data inside Rooms/Areas/Spaces and aggregate into spatial parameters."
 
+import os
 import clr
 clr.AddReference('System')
 clr.AddReference('PresentationFramework')
@@ -46,6 +47,21 @@ from Autodesk.Revit.UI import TaskDialog
 
 uidoc = __revit__.ActiveUIDocument
 doc = uidoc.Document
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Data_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Data_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
 
 # ================================================================
 # CONSTANTS & HELPERS
@@ -897,11 +913,13 @@ class RoomDataCollectorWindow(Window):
         self.btn_collect = self._btn("Collect Data", self._on_collect, ACCENT, WHITE, 130)
         self.btn_apply = self._btn("Apply to Rooms", self._on_apply, SUCCESS, WHITE, 140)
         self.btn_select = self._btn("Select Elements", self._on_select, "#2196F3", WHITE, 140)
+        self.btn_help = self._btn("? Help", self._on_help, BORDER, TEXT_DARK, 80)
         self.btn_close = self._btn("Close", self._on_close, BORDER, TEXT_DARK, 80)
 
         btn_sp.Children.Add(self.btn_collect)
         btn_sp.Children.Add(self.btn_apply)
         btn_sp.Children.Add(self.btn_select)
+        btn_sp.Children.Add(self.btn_help)
         btn_sp.Children.Add(self.btn_close)
 
         DockPanel.SetDock(btn_sp, Dock.Right)
@@ -1705,6 +1723,23 @@ class RoomDataCollectorWindow(Window):
             TaskDialog.Show("Select", "Selected " + str(ids.Count) + " element(s).")
         else:
             TaskDialog.Show("Select", "No elements to select.")
+
+    def _on_help(self, s, e):
+        if _open_help_page("room_data_collector.html"):
+            return
+        TaskDialog.Show(
+            "Room Data Collector",
+            "Reverse of Contains Manager: collects parameter values from "
+            "elements inside Rooms/Areas/Spaces and aggregates them back "
+            "into a parameter on each spatial element.\n\n"
+            "- Pick the spatial type (Rooms/Areas/Spaces) and the element "
+            "categories to scan, then Collect Data to find matches.\n"
+            "- Choose the source element parameter and an aggregation "
+            "method (Sum, Count, Average, Min, Max, First, Last, List, "
+            "Unique List).\n"
+            "- Apply to Rooms writes the aggregated value into the chosen "
+            "spatial parameter; Select Elements adds the matched elements "
+            "to the active selection.")
 
     def _on_close(self, s, e):
         self.Close()

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Schedule Duplicator - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Schedule Duplicator</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Schedules</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Schedule Duplicator</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Batch-duplicates a schedule a set number of times, with a shared
+      naming pattern, a duplicate method, and an optional view template
+      applied to every copy - quicker than duplicating and renaming one
+      schedule at a time.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select the source schedule from the list.</li>
+      <li>Enter the number of copies to create.</li>
+      <li>Enter a base name - each copy is named
+        <code>&lt;base&gt;_&lt;n&gt;</code>.</li>
+      <li>Pick a view template: keep the source's current template, reuse
+        it explicitly, pick another schedule template, or apply
+        none.</li>
+      <li>Pick the duplicate method - Duplicate, As Dependent, or As
+        Independent.</li>
+      <li>Confirm applying the template (if one was picked), then the
+        tool creates all copies and reports how many succeeded.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      If a chosen view template isn't valid for the schedule's fields,
+      that copy is still created but the template isn't applied - check
+      the summary message for which copies were affected.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="schedule_export_import_pro.html"><span class="dir">&larr; Previous</span>Schedule Link Pro</a>
+    <a class="next" href="text_to_element.html"><span class="dir">Next tool &rarr;</span>Text to Element</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

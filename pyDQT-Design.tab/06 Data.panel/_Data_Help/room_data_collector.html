@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Room Data Collector - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Room Data Collector</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Spatial containers</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Room Data Collector</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      The reverse of <a href="contains_manager.html">Contains Manager</a>:
+      collects a parameter's values from elements inside Rooms/Areas/
+      Spaces and aggregates them back into a parameter on each spatial
+      element - e.g. total furniture count per room, or a comma list of
+      equipment tags in a space.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Aggregation methods</h2>
+    <dl class="kv">
+      <dt class="v-blue">Sum / Average / Min / Max</dt><dd>numeric aggregation across the matched elements' values</dd>
+      <dt class="v-green">Count</dt><dd>how many matched elements were found</dd>
+      <dt class="v-gold">First / Last</dt><dd>the value from the first or last matched element</dd>
+      <dt class="v-grey">List / Unique List</dt><dd>every value (or every distinct value) joined into one string</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the spatial type (Rooms/Areas/Spaces) and the element
+        categories to scan.</li>
+      <li><b>Collect Data</b> finds the elements inside each spatial
+        element.</li>
+      <li>Choose the source element parameter and an aggregation
+        method.</li>
+      <li><b>Apply to Rooms</b> writes the aggregated value into the
+        chosen spatial parameter.</li>
+      <li><b>Select Elements</b> adds the matched elements to the active
+        selection for a manual check.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="contains_manager.html"><span class="dir">&larr; Previous</span>Contains Manager</a>
+    <a class="next" href="bcf_reader.html"><span class="dir">Next tool &rarr;</span>BCF Reader</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

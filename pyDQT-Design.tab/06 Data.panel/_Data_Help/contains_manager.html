@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Contains Manager - Data Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Contains Manager</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Spatial containers</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Data Toolset</a><span>&rsaquo;</span>Contains Manager</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Finds elements physically inside Rooms, Areas, Spaces, Zones, Masses
+      or Scope Boxes and lets you assign a built value (e.g.
+      Number_Name) to a parameter on every matched element in bulk - the
+      reverse direction of
+      <a href="room_data_collector.html">Room Data Collector</a>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Stat cards</h2>
+    <dl class="kv">
+      <dt class="v-dark">Rooms / Areas / Spaces</dt><dd>count of each spatial type in the model</dd>
+      <dt class="v-dark">Zones / Masses / ScopeBox</dt><dd>count of the remaining container types</dd>
+      <dt class="v-gold">Found</dt><dd>elements matched by the last Find</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the spatial container type (Rooms/Areas/Spaces/Zones/
+        Masses/Scope Boxes) and the element categories to scope.</li>
+      <li><b>Find</b> scans which elements fall inside each container.</li>
+      <li><b>Visualize</b> highlights the found groups in the model;
+        <b>Select</b> adds them to the active Revit selection.</li>
+      <li><b>Set Parameter Value</b> writes a value built from the
+        container's own parameters (e.g. Number and Name, joined by a
+        separator) into a chosen parameter on every found element.</li>
+      <li><b>Reset</b> clears the current results and view-only
+        scoping.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="inplace_volume.html"><span class="dir">&larr; Previous</span>In-Place Volume</a>
+    <a class="next" href="room_data_collector.html"><span class="dir">Next tool &rarr;</span>Room Data Collector</a>
+  </div>
+  <footer class="site">Data Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
