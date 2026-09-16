@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Advanced Sheet Manager - Views-Sheets Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Advanced Sheet Manager</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Sheets</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Views-Sheets Toolset</a><span>&rsaquo;</span>Advanced Sheet Manager</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Manages every project sheet in one grid, with batch tools alongside
+      the ordinary create/rename/delete actions - built for projects with
+      many sheets where one-at-a-time editing in the Project Browser is
+      too slow.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Toolbar</h2>
+    <dl class="kv">
+      <dt class="v-gold">Create Sheet</dt><dd>manual entry, or batch-create from an Excel list (Column A = Sheet Number, Column B = Sheet Name)</dd>
+      <dt class="v-gold">Duplicate</dt><dd>duplicate the checked/selected sheets, optionally multiple copies each</dd>
+      <dt class="v-gold">Rename</dt><dd>opens the batch rename dialog for the selected sheets</dd>
+      <dt class="v-dark">Excel</dt><dd>exports the current sheet list to an .xlsx file</dd>
+      <dt class="v-dark">Report</dt><dd>a quick export variant</dd>
+      <dt class="v-green">Place Views</dt><dd>opens the views-onto-sheet placement dialog</dd>
+      <dt class="v-gold">Parameters</dt><dd>add extra parameter columns to the grid</dd>
+      <dt class="v-red">Delete</dt><dd>deletes the checked/selected sheets</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select All / Clear All manage which sheets are checked; Refresh
+        re-scans the model after external changes.</li>
+      <li>Use the toolbar actions on the checked/selected sheets.</li>
+      <li><b>Apply</b> commits any pending inline edits made directly in
+        the grid.</li>
+      <li><b>Close</b> exits - it warns first if there are unsaved changes.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="sheet_renumber.html"><span class="dir">&larr; Previous</span>Sheet Re-number</a>
+    <a class="next" href="view_manager_advanced.html"><span class="dir">Next tool &rarr;</span>Advanced View Manager</a>
+  </div>
+  <footer class="site">Views-Sheets Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

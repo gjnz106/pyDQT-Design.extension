@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Align Viewports - Views-Sheets Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Align Viewports</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Sheet layout</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Views-Sheets Toolset</a><span>&rsaquo;</span>Align Viewports</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Aligns viewports on multiple sheets to match a chosen Main sheet's
+      layout - crop position, view titles, and optionally titleblock
+      placement - so a set of similar sheets (e.g. one per level) stays
+      visually consistent without dragging each viewport by hand.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Alignment methods</h2>
+    <dl class="kv">
+      <dt class="v-gold">Crop Box Center (default)</dt><dd>lines up viewport crop frames by their center</dd>
+      <dt class="v-blue">Grid Intersection</dt><dd>use when sheets' crops differ in size/extent (e.g. one view shows extra site context) - lines up the building inside the crop, not just the frame</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Options</h2>
+    <dl class="kv">
+      <dt class="v-dark">Overlap same-type viewports</dt><dd>match by name, then position - needed when a sheet has more than one viewport of the same view type</dd>
+      <dt class="v-dark">Apply same Crop / Scope Box</dt><dd>copies the Main sheet's crop/scope box to the others</dd>
+      <dt class="v-dark">Align View Titles</dt><dd>matches label position - works best together with the Crop/Scope Box option, since Revit rejects a title position outside a differently-sized crop</dd>
+      <dt class="v-dark">Include Legends</dt><dd>also aligns legend viewports</dd>
+      <dt class="v-dark">Match TitleBlock Type</dt><dd>swaps other sheets' titleblock to match the Main sheet's</dd>
+      <dt class="v-dark">Snap TitleBlocks to origin</dt><dd>places every titleblock at (0,0,0)</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select 2 or more sheets, then run the tool.</li>
+      <li>Pick the Main sheet - the layout every other selected sheet should match.</li>
+      <li>Choose an Alignment Method and tick the options needed.</li>
+      <li>Click <b>Align Viewports</b>.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="next" href="linked_element_box.html"><span class="dir">Next tool &rarr;</span>Linked Element Box</a>
+  </div>
+  <footer class="site">Views-Sheets Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
