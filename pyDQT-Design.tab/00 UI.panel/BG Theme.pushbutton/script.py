@@ -50,12 +50,12 @@ CONFIG_PATH = os.path.join(PATH_SCRIPT, "dqt_bg_config.json")
 
 
 def _open_help_page(html_filename):
-    """Open this tool's page from the shared _00_UI_Help folder in the
+    """Open this tool's page from the shared _UI_Help folder in the
     default browser. Returns True on success, False if the caller should
     fall back to the in-app help text (e.g. the folder went missing)."""
     try:
         panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        path = os.path.join(panel_dir, "_00_UI_Help", html_filename)
+        path = os.path.join(panel_dir, "_UI_Help", html_filename)
         if not os.path.isfile(path):
             return False
         os.startfile(path)
