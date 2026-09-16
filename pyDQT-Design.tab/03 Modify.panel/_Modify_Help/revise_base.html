@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Revise Base - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Revise Base</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Levels &amp; constraints</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Revise Base</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Changes the base/reference level of many elements at once and keeps
+      their absolute position by automatically compensating the offset.
+      Supports Walls, Floors, Columns, Structural Columns, Beams,
+      Structural Framing, Doors, and Windows.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Doors and Windows</h2>
+    <p>
+      For Doors/Windows, "Level" (Schedule Level) and "Sill Height" stand
+      in for Base Constraint/Offset. A hosted door or window whose
+      family/type has no Sill Height parameter is reported as <b>failed</b>
+      rather than silently skipped, and the Level change is verified after
+      Revit regenerates - since a host wall can silently reset a door or
+      window's Level back to its own, any element where that happens is
+      also reported as failed rather than counted as a success.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select the elements to revise.</li>
+      <li>Run the tool.</li>
+      <li>Select the new base/reference level from the list.</li>
+      <li>The tool updates the level and compensates the offset for each
+        element, then reports exactly which elements succeeded and which
+        failed (and why) - it never just shows a bare success/failure count.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="property_line_from_excel.html"><span class="dir">&larr; Previous</span>Property Line from Excel</a>
+    <a class="next" href="room_to_area.html"><span class="dir">Next tool &rarr;</span>Room To Area</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

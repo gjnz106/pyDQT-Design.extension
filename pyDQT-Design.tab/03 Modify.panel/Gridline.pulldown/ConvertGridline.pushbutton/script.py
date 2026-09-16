@@ -245,6 +245,7 @@ MAIN_XAML = """
             <TextBlock Text="Ctrl+Click: multi-select | Checkbox: batch select | Double-click row: select in Revit" FontSize="10" Foreground="#888" VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock Text="pyDQT v1.0" FontSize="9" Foreground="#AAA" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <Button x:Name="btnHelp" Content="? Help" Padding="12,5" Margin="0,0,6,0" Background="White" BorderBrush="#D4B87A"/>
                 <Button x:Name="btnClose" Content="Close" Padding="15,5" Background="White" BorderBrush="#D4B87A"/>
             </StackPanel>
         </Grid>
@@ -347,6 +348,21 @@ class GridItem(System.Object):
         return self._view
 
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # =====================================================
 # MAIN WINDOW CLASS
 # =====================================================
@@ -379,6 +395,7 @@ class GridSwapWindow(object):
         self.btn_toggle = self.window.FindName("btnToggle")
         self.btn_refresh = self.window.FindName("btnRefresh")
         self.btn_close = self.window.FindName("btnClose")
+        self.btn_help = self.window.FindName("btnHelp")
         
         # Bubble control buttons
         self.btn_bubble_start_on = self.window.FindName("btnBubbleStartOn")
@@ -410,6 +427,7 @@ class GridSwapWindow(object):
         self.btn_toggle.Click += self._on_toggle
         self.btn_refresh.Click += self._on_refresh
         self.btn_close.Click += self._on_close
+        self.btn_help.Click += self._on_help
         self.cmb_view.SelectionChanged += self._on_view_changed
         self.cmb_filter.SelectionChanged += self._on_filter_changed
         self.txt_search.TextChanged += self._on_search_changed
@@ -855,6 +873,21 @@ class GridSwapWindow(object):
     def _on_close(self, sender, args):
         """Close the window"""
         self.window.Close()
+
+    def _on_help(self, sender, args):
+        """Open the tool's usage-guide page, or fall back to a message box."""
+        if _open_help_page("grid_swap.html"):
+            return
+        WPFMessageBox.Show(
+            "Swaps gridlines between 3D (whole model) and 2D (view-specific) "
+            "extents, and controls bubble visibility, in the checked view(s).\n\n"
+            "- Select All/None/3D/2D narrow the checked rows.\n"
+            "- Swap to 2D / Swap to 3D changes the checked grids' extent type.\n"
+            "- Toggle flips each checked grid between 2D and 3D.\n"
+            "- Bubble Start/End/All ON/OFF show or hide the datum bubble on "
+            "that end, for the checked grids.\n"
+            "- Refresh re-scans the model after any change made outside this tool.",
+            "Grid Swap - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
     
     def _on_row_double_click(self, sender, args):
         """Select grid in Revit on double-click"""

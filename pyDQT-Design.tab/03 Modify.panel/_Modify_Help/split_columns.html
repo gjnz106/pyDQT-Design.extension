@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Split Columns - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Split Columns</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Split tools</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Split Columns</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Splits one structural column at chosen levels - e.g. a column that
+      runs through several floors becomes one column segment per level
+      range - and reports any elements hosted on the original column so
+      nothing gets lost in the split.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select exactly <b>one</b> structural column, then run the tool.</li>
+      <li>If the column has hosted elements, a warning lists them and
+        offers to export a CSV report before continuing (for manual
+        recreation afterward, since a split column can't carry them
+        automatically).</li>
+      <li>Pick the level(s) to split at from the list.</li>
+      <li>Confirm to split the column into segments at those levels.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Only one column at a time is supported - selecting more than one, or
+      selecting a non-structural-column element, is rejected with an
+      explanatory message.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="split_ceiling.html"><span class="dir">&larr; Previous</span>Split Ceiling</a>
+    <a class="next" href="split_floor.html"><span class="dir">Next tool &rarr;</span>Split Floor</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

@@ -12,6 +12,7 @@ __title__ = "Align\nLevels"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Align 2D level extents to a reference line."
 
+import os
 import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
@@ -214,6 +215,21 @@ def align_level_to_reference(level, ref_line, align_end_index, view, set_2d):
         return False
 
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # ─── WPF UI ─────────────────────────────────────────────────
 class AlignLevelsWindow(Window):
     def __init__(self):
@@ -375,6 +391,7 @@ class AlignLevelsWindow(Window):
         btn_panel.Margin = Thickness(0, 4, 0, 0)
         btn_panel.Children.Add(self._button("Run Alignment", self._on_run, primary=True))
         btn_panel.Children.Add(self._button("Cancel", self._on_cancel))
+        btn_panel.Children.Add(self._button("? Help", self._on_help))
         body.Children.Add(btn_panel)
 
         root.Children.Add(body)
@@ -423,6 +440,21 @@ class AlignLevelsWindow(Window):
     def _on_cancel(self, sender, args):
         self.result = None
         self.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("align_levels.html"):
+            return
+        TaskDialog.Show(
+            "Align Levels",
+            "Aligns level start/end points to a reference element (Level, "
+            "Detail Line, Model Line, Reference Plane, or Grid).\n\n"
+            "1. Choose which end(s) to align: Left (Bubble End), Right "
+            "(Non-Bubble), or Both (picks 2 references).\n"
+            "2. Click Run Alignment.\n"
+            "3. Select the levels to align (Enter/Right-click to finish).\n"
+            "4. Pick the reference element - the level endpoint snaps to its line.\n\n"
+            "'Force 2D extent' switches the level to a view-specific 2D "
+            "extent before aligning, if it isn't already.")
 
 
 # ─── Pick Helpers ───────────────────────────────────────────

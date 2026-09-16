@@ -16,6 +16,7 @@ __title__ = "Room To\nArea"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Auto-create Areas from selected Rooms with boundary lines.\nCopyright (c) 2025 Dang Quoc Truong (DQT)"
 
+import os
 import clr
 clr.AddReference('System')
 clr.AddReference('System.Windows.Forms')
@@ -48,6 +49,21 @@ from Autodesk.Revit.DB import (
 )
 from Autodesk.Revit.DB.Architecture import Room
 from Autodesk.Revit.UI import TaskDialog
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 import System
 import math
@@ -975,6 +991,9 @@ class RoomToAreaWindow(Window):
         btn_create = self._create_button("Create from Checked", self.on_create_areas, primary=True)
         right_panel.Children.Add(btn_create)
         
+        btn_help = self._create_button("? Help", self.on_help)
+        right_panel.Children.Add(btn_help)
+
         btn_close = self._create_button("Close", self.on_close)
         right_panel.Children.Add(btn_close)
         
@@ -1356,6 +1375,23 @@ class RoomToAreaWindow(Window):
     
     def on_close(self, sender, args):
         self.Close()
+
+    def on_help(self, sender, args):
+        if _open_help_page("room_to_area.html"):
+            return
+        TaskDialog.Show(
+            "Room To Area - DQT",
+            "Automatically creates Areas from selected Rooms, drawing area "
+            "boundary lines that match each room's boundary.\n\n"
+            "- Check All / Uncheck All / Invert manage the room list.\n"
+            "- Select in Revit selects the checked rooms in the model.\n"
+            "- Create from Checked processes every checked room; Create "
+            "from Selected processes only the rooms currently selected in "
+            "the grid.\n"
+            "- 'Auto-create Area Plan if missing' creates the target Area "
+            "Plan view automatically when the chosen area scheme has none.\n"
+            "- Transfer Parameters (All/None) copies the ticked room "
+            "parameters onto each new Area.")
     
     def on_select_in_revit(self, sender, args):
         """Select checked rooms in Revit"""

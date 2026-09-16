@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CAD to Wall - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>CAD to Wall</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">CAD conversion</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>CAD to Wall</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Reads lines from a CAD import/link, detects parallel line pairs,
+      computes their centerlines, and auto-creates Wall Types matching the
+      detected thickness - turning double-line CAD wall drawings into real
+      Revit walls.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li><b>Refresh Layers</b> lists the CAD file's layers to choose from.</li>
+      <li>Tick the layers containing wall lines.</li>
+      <li><b>Preview</b> shows the walls that would be created, without creating them.</li>
+      <li>Pick a Level and enter a wall height.</li>
+      <li><b>Create Walls</b> builds the walls, auto-creating any wall type
+        whose thickness doesn't already exist.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="cad_to_floor.html"><span class="dir">&larr; Previous</span>CAD to Floor / Part</a>
+    <a class="next" href="floor_points.html"><span class="dir">Next tool &rarr;</span>Floor Points</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

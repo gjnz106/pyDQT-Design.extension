@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Split Shaft Opening - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Split Shaft Opening</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Split tools</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Split Shaft Opening</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Splits a shaft opening that has several disconnected boundary loops
+      into separate individual shaft openings, using a copy-paste method
+      that preserves the opening's Symbolic Lines and holes natively
+      instead of redrawing them as detached model lines.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Choose how to pick openings: whole model, active view, current
+        selection, or pick in view.</li>
+      <li>The tool <b>surveys</b> the openings first (read-only, no
+        transaction) and reports how many separate regions each one
+        actually contains - a shaft that looks like one element in the
+        browser is often a dozen regions in one sketch, with no native way
+        to see that count otherwise.</li>
+      <li>Tick which multi-region openings to split, biggest first.</li>
+      <li>The tool copy-pastes the shaft one copy at a time, reduces each
+        copy to its one region immediately, and reduces the original
+        opening last (so if anything fails mid-run, the original is still
+        untouched).</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box warn">
+      Splitting uses <code>SketchEditScope.Commit()</code> on a shaft
+      opening sketch, which is unstable on some Revit builds and can hard-
+      crash Revit (an unrecoverable native crash Python cannot catch).
+      <b>Save the model before running this tool.</b>
+    </div>
+    <div class="box tip">
+      The survey step alone is always safe to run - it opens no
+      transaction and changes nothing, so use it just to see the region
+      count even if you don't intend to split anything yet.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="split_floor.html"><span class="dir">&larr; Previous</span>Split Floor</a>
+    <a class="next" href="split_walls.html"><span class="dir">Next tool &rarr;</span>Split Walls</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

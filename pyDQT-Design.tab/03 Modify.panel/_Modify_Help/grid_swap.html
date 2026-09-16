@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grid Swap - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Grid Swap</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Grids &amp; levels</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Grid Swap</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Swaps gridlines between 3D (whole-model) and 2D (view-specific)
+      extents, and controls bubble visibility, across multiple views at
+      once - a batch version of right-clicking a grid and choosing
+      "2D Extents" / "3D Extents" one at a time.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Grid columns / stats</h2>
+    <dl class="kv">
+      <dt class="v-dark">Total Grids</dt><dd>grids found in the chosen view scope</dd>
+      <dt class="v-green">Is 3D</dt><dd>grids currently using a 3D (whole-model) extent</dd>
+      <dt class="v-blue">Is 2D</dt><dd>grids currently using a 2D (view-specific) extent</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the view to work in, and filter/search the grid list if needed.</li>
+      <li>Use <b>Select All / None / 3D / 2D</b> to check the rows to act on.</li>
+      <li><b>Swap to 2D</b> / <b>Swap to 3D</b> changes the checked grids' extent type.</li>
+      <li><b>Toggle</b> flips each checked grid between 2D and 3D.</li>
+      <li>The <b>Bubble</b> row (Start/End/All, ON/OFF) shows or hides the
+        datum bubble on that end, for the checked grids.</li>
+      <li><b>Refresh</b> re-scans the model after any change made outside this tool.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="align_grids.html"><span class="dir">&larr; Previous</span>Align Grids</a>
+    <a class="next" href="align_levels.html"><span class="dir">Next tool &rarr;</span>Align Levels</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

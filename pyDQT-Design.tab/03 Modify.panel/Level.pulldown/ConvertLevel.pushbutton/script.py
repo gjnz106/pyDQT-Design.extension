@@ -245,6 +245,7 @@ MAIN_XAML = """
             <TextBlock Text="Ctrl+Click: multi-select | Checkbox: batch select | Double-click row: select in Revit" FontSize="10" Foreground="#888" VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock Text="pyDQT v1.0" FontSize="9" Foreground="#AAA" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <Button x:Name="btnHelp" Content="? Help" Padding="12,5" Margin="0,0,6,0" Background="White" BorderBrush="#D4B87A"/>
                 <Button x:Name="btnClose" Content="Close" Padding="15,5" Background="White" BorderBrush="#D4B87A"/>
             </StackPanel>
         </Grid>
@@ -362,6 +363,21 @@ class LevelItem(System.Object):
         return self._view
 
 
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # =====================================================
 # MAIN WINDOW CLASS
 # =====================================================
@@ -399,6 +415,7 @@ class LevelSwapWindow(object):
         self.btn_toggle = self.window.FindName("btnToggle")
         self.btn_refresh = self.window.FindName("btnRefresh")
         self.btn_close = self.window.FindName("btnClose")
+        self.btn_help = self.window.FindName("btnHelp")
         
         # Bubble control buttons
         self.btn_bubble_start_on = self.window.FindName("btnBubbleStartOn")
@@ -430,6 +447,7 @@ class LevelSwapWindow(object):
         self.btn_toggle.Click += self._on_toggle
         self.btn_refresh.Click += self._on_refresh
         self.btn_close.Click += self._on_close
+        self.btn_help.Click += self._on_help
         self.cmb_view.SelectionChanged += self._on_view_changed
         self.cmb_filter.SelectionChanged += self._on_filter_changed
         self.txt_search.TextChanged += self._on_search_changed
@@ -834,7 +852,23 @@ class LevelSwapWindow(object):
     
     def _on_close(self, sender, args):
         self.window.Close()
-    
+
+    def _on_help(self, sender, args):
+        """Open the tool's usage-guide page, or fall back to a message box."""
+        if _open_help_page("level_swap.html"):
+            return
+        WPFMessageBox.Show(
+            "Swaps levels between 3D (whole model) and 2D (view-specific) "
+            "extents, and controls bubble visibility and Left/Right "
+            "extents, in the checked view(s).\n\n"
+            "- Select All/None/3D/2D narrow the checked rows.\n"
+            "- Swap to 2D / Swap to 3D changes the checked levels' extent type.\n"
+            "- Toggle flips each checked level between 2D and 3D.\n"
+            "- Bubble Left/Right/All ON/OFF show or hide the datum bubble on "
+            "that end, for the checked levels.\n"
+            "- Refresh re-scans the model after any change made outside this tool.",
+            "Level Swap - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
+
     def _on_row_double_click(self, sender, args):
         """Select level in Revit on double-click"""
         if self.dg_levels.SelectedItem is not None:

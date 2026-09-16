@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Auto Coping - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Auto Coping</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Steel framing</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Auto Coping</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Batch apply or remove coping on steel beams - like Revit's own Apply
+      Coping command, but for many beam/cutter pairs at once instead of
+      one pair at a time.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Modes</h2>
+    <dl class="kv">
+      <dt class="v-green">Apply coping</dt><dd>pick the element(s) to be CUT (coped), then the CUTTING element(s)</dd>
+      <dt class="v-red">Remove coping</dt><dd>pick any related elements - coping is removed in BOTH directions, whether the picked element is the cut beam or the cutter, so there's no need to guess which side holds the coping</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool and choose Apply coping or Remove coping.</li>
+      <li><b>Apply:</b> pick the beam(s) to be coped, then pick the cutting
+        element(s).</li>
+      <li><b>Remove:</b> pick any beams involved in a coping relationship -
+        the tool figures out and removes the coping regardless of which
+        side you picked.</li>
+    </ol>
+  </div>
+
+  <div class="pagenav">
+    <a class="next" href="autojoin.html"><span class="dir">Next tool &rarr;</span>Auto Join Elements</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

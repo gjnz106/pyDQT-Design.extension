@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Property Line from Excel - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Property Line from Excel</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Site &amp; boundaries</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Property Line from Excel</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Draws a closed loop of Model Lines - a boundary - from
+      Easting/Northing (or plain X/Y) coordinate tables found in an .xlsx
+      file. A header shared by several boundaries listed back-to-back with
+      no separating row (e.g. WL1..WL8 immediately followed by LB1..LB30)
+      is split one boundary per label prefix, rather than looped through
+      as a single bogus shape.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the .xlsx file - the tool finds and lists the coordinate
+        table(s) it detects.</li>
+      <li>Tick the boundaries to draw.</li>
+      <li>Pick the target view to draw into, and optionally a Generic
+        Annotation family to place at every point (e.g. a survey point
+        marker).</li>
+      <li>Click <b>Create</b>.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box fixed">
+      Revit's own PropertyLine element cannot be created through the
+      public API - <code>Document.Create</code> has no
+      <code>NewPropertyLine</code> method, and <code>PropertyLine</code>
+      has no <code>Create</code> method either, on any Revit version this
+      suite supports. This tool draws the boundary as plain Model Lines
+      instead, which is real, supported API and is enough to see and check
+      the shape; promoting it into a true Property Line still needs
+      Revit's native Property Lines &gt; Edit Table dialog.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="rehost_level.html"><span class="dir">&larr; Previous</span>Rehost Level</a>
+    <a class="next" href="revise_base.html"><span class="dir">Next tool &rarr;</span>Revise Base</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

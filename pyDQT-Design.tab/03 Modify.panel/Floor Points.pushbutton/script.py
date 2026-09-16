@@ -18,6 +18,7 @@ __doc__ = ("Move the shape points of selected floors and toposolids all at "
 # ==============================================================================
 # IMPORTS - aliased Revit DB import so WPF's Grid is not overwritten
 # ==============================================================================
+import os
 import clr
 
 clr.AddReference('RevitAPI')
@@ -36,6 +37,21 @@ from Autodesk.Revit.DB import (
 )
 from Autodesk.Revit.UI import TaskDialog
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
+
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -592,6 +608,8 @@ XAML_MAIN = """
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                     Margin="0,16,0,0">
+          <Button x:Name="BtnHelp" Content="? Help"
+                  Style="{StaticResource DqtButton}" Background="#FFFFFF"/>
           <Button x:Name="BtnCancel" Content="Cancel"
                   Style="{StaticResource DqtButton}"/>
           <Button x:Name="BtnApply" Content="Apply"
@@ -639,6 +657,7 @@ class FloorPointsDialog(object):
         self.preview_text = self.window.FindName("PreviewText")
         self.btn_apply = self.window.FindName("BtnApply")
         self.btn_cancel = self.window.FindName("BtnCancel")
+        self.btn_help = self.window.FindName("BtnHelp")
 
         self._fill_summary()
 
@@ -650,6 +669,7 @@ class FloorPointsDialog(object):
         self.txt_value.TextChanged += self._on_options_changed
         self.btn_apply.Click += self._on_apply
         self.btn_cancel.Click += self._on_cancel
+        self.btn_help.Click += self._on_help
 
         self._refresh()
 
@@ -748,6 +768,18 @@ class FloorPointsDialog(object):
     def _on_cancel(self, sender, args):
         self.confirmed = False
         self.window.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("floor_points.html"):
+            return
+        TaskDialog.Show(
+            "Floor Points",
+            "Bulk-adjust the slab shape points ('Modify Sub Elements') of "
+            "one or more selected floors or toposolids.\n\n"
+            "- Points to move: All / Interior only / Boundary only.\n"
+            "- Offset moves every selected point by the same delta (e.g. "
+            "-2000 mm); Set puts every selected point on one elevation.\n"
+            "- Result previews what will change before you click Apply.")
 
     def show(self):
         self.window.ShowDialog()

@@ -95,6 +95,22 @@ C_COPYRIGHT = "#AAAAAA"      # Copyright text
 
 FONT = FontFamily("Segoe UI")
 
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Modify_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Modify_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # ==========================================================================
 # JOINABLE CATEGORIES
 # ==========================================================================
@@ -344,6 +360,12 @@ class AutoJoinWindow(Window):
         btn_del = self._btn("Delete Setting", 105, C_DEL_SET, C_BTN_FG)
         btn_del.Click += self._on_delete_setting
         sp.Children.Add(btn_del)
+
+        sp.Children.Add(self._spacer(6))
+
+        btn_help = self._btn("? Help", 60, C_TEXT_MID, C_BTN_FG)
+        btn_help.Click += self._on_help
+        sp.Children.Add(btn_help)
 
         return sp
 
@@ -686,6 +708,21 @@ class AutoJoinWindow(Window):
         self._load_presets_combo()
         self._preset_cb.Text = ""
         TaskDialog.Show("Deleted", "Setting '{}' deleted.".format(name))
+
+    def _on_help(self, s, e):
+        if _open_help_page("autojoin.html"):
+            return
+        TaskDialog.Show(
+            "Auto Join - DQT",
+            "Each rule pairs a Priority Category with a Join With Category; "
+            "the Priority Category cuts the other one.\n\n"
+            "- Add Rule adds another category pair.\n"
+            "- The Switch button on a rule swaps which side cuts which.\n"
+            "- 'Selected elements only' restricts Join/Unjoin to the current "
+            "Revit selection instead of the whole active view.\n"
+            "- Join applies every enabled rule; Unjoin removes those joins.\n"
+            "- Save Setting / Delete Setting keep named rule sets for reuse "
+            "across sessions.")
 
     def _validate_selection(self):
         if bool(self.cb_selection.IsChecked) and not preselected_ids:
