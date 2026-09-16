@@ -61,6 +61,21 @@ doc = revit.doc
 uidoc = revit.uidoc
 output = script.get_output()
 
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _Settings_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_Settings_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
 # =====================================================
 # DQT BRAND COLORS (synced with IFC-SG Checker)
 # =====================================================
@@ -980,6 +995,7 @@ class ColorSplasherWindow(Window):
         self.btnFilters.Click += self._ev_filters
         self.btnSaveColors.Click += self._ev_save_colors
         self.btnLoadColors.Click += self._ev_load_colors
+        self.btnHelp.Click += self._ev_help
         self.btnClose.Click += self._ev_close
         
         if self.categories:
@@ -1183,6 +1199,7 @@ class ColorSplasherWindow(Window):
         self._make_col(brg, GridLength.Auto)
         self._make_col(brg, GridLength.Auto)
         self._make_col(brg, GridLength.Auto)
+        self._make_col(brg, GridLength.Auto)
         
         # Status text on left
         self.txtFooterStatus = TextBlock()
@@ -1212,9 +1229,13 @@ class ColorSplasherWindow(Window):
         self.btnApply.Margin = Thickness(0,0,8,0)
         WPFGrid.SetColumn(self.btnApply, 2); brg.Children.Add(self.btnApply)
         
+        self.btnHelp = self._make_btn("? Help", CLR_CARD, CLR_TEXT)
+        self.btnHelp.Width = 70; self.btnHelp.Margin = Thickness(0,0,8,0)
+        WPFGrid.SetColumn(self.btnHelp, 3); brg.Children.Add(self.btnHelp)
+
         self.btnClose = self._make_btn("Close", CLR_CARD, CLR_TEXT)
         self.btnClose.Width = 80
-        WPFGrid.SetColumn(self.btnClose, 3); brg.Children.Add(self.btnClose)
+        WPFGrid.SetColumn(self.btnClose, 4); brg.Children.Add(self.btnClose)
         
         btn_row.Child = brg; main.Children.Add(btn_row)
         
@@ -1973,6 +1994,27 @@ class ColorSplasherWindow(Window):
             count = clear_overrides()
             forms.alert("Cleared {} elements.".format(count), title="Color Splasher - DQT")
     
+    def _ev_help(self, s, a):
+        if _open_help_page("colorsplasher.html"):
+            return
+        forms.alert(
+            "Auto-colors elements in the active view based on a parameter's "
+            "value.\n\n"
+            "- Pick a category and a parameter; each distinct value gets its "
+            "own color (Gradient or Random), or pick colors per value "
+            "yourself.\n"
+            "- Apply Colors sets a graphic override on every matching "
+            "element in the active view (or across links, via View "
+            "Filters).\n"
+            "- Create Legend places a legend view text/color key; Create "
+            "View Filters builds real Revit filters from the same "
+            "colors.\n"
+            "- Save Colors / Load Colors reuse a color scheme across "
+            "models.\n"
+            "- Reset clears all overrides this tool applied to the active "
+            "view.",
+            title="Color Splasher - DQT")
+
     def _ev_close(self, s, a): self.Close()
 
 
