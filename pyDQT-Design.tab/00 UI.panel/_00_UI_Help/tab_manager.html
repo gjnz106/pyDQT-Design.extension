@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tab Manager - UI Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Extension Tab Manager</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Ribbon layout</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">UI Toolset</a><span>&rsaquo;</span>Extension Tab Manager</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Shows/hides Revit ribbon tabs that belong to installed extensions and
+      add-ins - useful for decluttering the ribbon when several add-ins are
+      installed but only some are in active use. Revit's own built-in tabs
+      (Architecture, Structure, Annotate, and so on) are never listed, so
+      there's no risk of hiding a core tab by mistake.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool - it scans the live ribbon and lists every tab that
+        isn't a recognized Revit built-in or Family Editor tab.</li>
+      <li>Tick the tabs you want visible, untick the ones to hide.</li>
+      <li>Click <b>Apply</b> to show/hide tabs immediately and save the
+        choice to a per-user memory file.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      <b>No Extension/Add-in tabs found</b> means every ribbon tab in the
+      current session matched the built-in ignore list - normal on a
+      install with no other extensions loaded.
+    </div>
+    <div class="box tip">
+      Hidden tabs stay hidden only for the current Revit session's ribbon
+      state; reopening Revit shows every tab again until this tool is run
+      to hide them once more.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="check_update.html"><span class="dir">&larr; Previous</span>Check Update</a>
+  </div>
+  <footer class="site">UI Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

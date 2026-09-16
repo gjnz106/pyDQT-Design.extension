@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Check Update - UI Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Check Update</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Version check</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">UI Toolset</a><span>&rsaquo;</span>Check Update</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      One click, no window - compares the installed pyDQT-Design's local git
+      commit against the latest commit on GitHub and reports whether it's
+      up to date or a newer version is available.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Possible results</h2>
+    <dl class="kv">
+      <dt class="v-red">Not a git install</dt><dd>the extension folder has no <code>.git</code> - reinstall via pyRevit's Extension Manager using the GitHub URL to enable one-click update checks</dd>
+      <dt class="v-orange">Cannot reach GitHub</dt><dd>network/connectivity issue - check your connection and try again</dd>
+      <dt class="v-green">Up to date</dt><dd>installed commit matches (or is a prefix of) the latest commit on the tracked branch</dd>
+      <dt class="v-gold">New version available</dt><dd>shows the installed and latest short SHAs, plus how to update</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Updating</h2>
+    <ol class="steps">
+      <li>Use the pyRevit ribbon's own <b>Update</b> button, then <b>Reload</b>, or</li>
+      <li>Run <code>git pull</code> in the extension's installed folder, then <b>Reload</b>.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      The check reads whichever branch the local clone's <code>.git/HEAD</code>
+      currently points to, and compares it against that same branch name on
+      GitHub - not always <code>main</code>.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="ribbon_names.html"><span class="dir">&larr; Previous</span>Ribbon Name Manager</a>
+    <a class="next" href="tab_manager.html"><span class="dir">Next tool &rarr;</span>Tab Manager</a>
+  </div>
+  <footer class="site">UI Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

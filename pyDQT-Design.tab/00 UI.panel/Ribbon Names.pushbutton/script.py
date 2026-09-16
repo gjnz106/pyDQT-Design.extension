@@ -62,6 +62,22 @@ STATE_PATH   = os.path.join(PATH_SCRIPT, "dqt_ribbon_state.json")
 
 FOOTER_TEXT = "Dang Quoc Truong - DQT (c) 2026"
 
+
+def _open_help_page(html_filename):
+    """Open this tool's page from the shared _00_UI_Help folder in the
+    default browser. Returns True on success, False if the caller should
+    fall back to the in-app help text (e.g. the folder went missing)."""
+    try:
+        panel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(panel_dir, "_00_UI_Help", html_filename)
+        if not os.path.isfile(path):
+            return False
+        os.startfile(path)
+        return True
+    except Exception:
+        return False
+
+
 # unicode() exists in IronPython 2.7 but not CPython3; shim for both engines
 try:
     _unicode = unicode  # noqa: F821  (IronPython 2)
@@ -215,14 +231,20 @@ XAML = """<Window
     <!-- Header -->
     <Border Grid.Row="0" Background="#F0CC88"
             BorderBrush="#D4B87A" BorderThickness="0,0,0,2" Padding="16,12">
-      <StackPanel>
-        <TextBlock Text="Ribbon Name Manager" Foreground="#5D4E37"
-                   FontSize="18" FontWeight="Bold"/>
-        <TextBlock x:Name="HeaderSub"
-                   Text="Double-click a Short Name cell to edit. Then Apply Short or Restore Full."
-                   Foreground="#5D4E37" FontSize="11" Margin="0,2,0,0"
-                   TextWrapping="Wrap"/>
-      </StackPanel>
+      <Grid>
+        <StackPanel>
+          <TextBlock Text="Ribbon Name Manager" Foreground="#5D4E37"
+                     FontSize="18" FontWeight="Bold"/>
+          <TextBlock x:Name="HeaderSub"
+                     Text="Double-click a Short Name cell to edit. Then Apply Short or Restore Full."
+                     Foreground="#5D4E37" FontSize="11" Margin="0,2,0,0"
+                     TextWrapping="Wrap"/>
+        </StackPanel>
+        <Button x:Name="BtnHelp" Content="? Help" Style="{StaticResource DqtButton}"
+                Padding="10,4" Margin="0" FontSize="11"
+                HorizontalAlignment="Right" VerticalAlignment="Top"
+                Background="#FFFFFF"/>
+      </Grid>
     </Border>
 
     <!-- Body: DataGrid -->
@@ -299,6 +321,7 @@ class RibbonNameWindow(object):
         self.win.FindName("BtnSave").Click += self._on_save
         self.win.FindName("BtnReset").Click += self._on_reset
         self.win.FindName("BtnClose").Click += self._on_close
+        self.win.FindName("BtnHelp").Click += self._on_help
 
         self.message = None
 
@@ -435,6 +458,21 @@ class RibbonNameWindow(object):
 
     def _on_close(self, sender, args):
         self.win.Close()
+
+    def _on_help(self, sender, args):
+        if _open_help_page("ribbon_names.html"):
+            return
+        forms.alert(
+            "Lists every live ribbon tab with its current name and a short "
+            "name.\n\n"
+            "- Double-click a Short Name cell to edit it.\n"
+            "- Apply Short renames all tabs to their short names.\n"
+            "- Restore Full puts the original full names back.\n"
+            "- Save Map remembers your custom short names for next time.\n"
+            "- Reset puts the short-name column back to the built-in "
+            "defaults (not applied until you click Apply Short).\n\n"
+            "No external Snippets dependency or per-language files needed.",
+            title="DQT - Ribbon Name Manager")
 
     def _update_sub(self, text):
         sub = self.win.FindName("HeaderSub")

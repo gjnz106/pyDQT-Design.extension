@@ -87,43 +87,43 @@ def CheckBoxForListItem(nameLst, activeLst):
 
 # Starting
 def main_task():
-    # Danh sach cac tab REVIT BUILT-IN - se bo qua khong hien thi
+    # List of REVIT BUILT-IN tabs - these are skipped and never shown
     ignoreTabNameLst = []
     ignoreTabNameLst1 = ["Architecture", "Structure", "Steel", "Precast", "Systems", "Insert", "Annotate", "Analyze",
                          "Massing & Site", "Collaborate", "View", "Manage", "Add-Ins", "Modify"]
     ignoreTabNameLst2 = ["Arch", "Struc", "MEP", "Anno", "Mass&Site", "Collab", "Fam.Editor"]
     ignoreTabNameLst3 = ["Create", "In-Place Model", "In-Place Mass", "Zone", "Family Editor"]
-    
-    # Them cac tab cua ban vao day neu muon BO QUA (khong quan ly)
+
+    # Add your own tabs here to SKIP them (exclude from management)
     ignoreTabNameLst4 = ["pyRevit", "MEOS"]
-    
+
     ignoreTabNameLst.extend(ignoreTabNameLst1)
     ignoreTabNameLst.extend(ignoreTabNameLst2)
     ignoreTabNameLst.extend(ignoreTabNameLst3)
     ignoreTabNameLst.extend(ignoreTabNameLst4)
 
-    # Lay tat ca cac tab EXTENSION/ADD-IN (khong phai built-in cua Revit)
+    # Collect every EXTENSION/ADD-IN tab (not a Revit built-in tab)
     extensionTabLst = []
     extensionTabNameLst = []
     visibleTabNameLst = []
-    
+
     for tab in AdWindows.ComponentManager.Ribbon.Tabs:
-        # Chi lay cac tab KHONG NAM trong danh sach ignore (tuc la Extension/Add-in)
+        # Only keep tabs NOT in the ignore list (i.e. Extension/Add-in tabs)
         if tab.Title not in ignoreTabNameLst:
             extensionTabLst.append(tab)
             extensionTabNameLst.append(tab.Title)
             if tab.IsVisible:
                 visibleTabNameLst.append(tab.Title)
 
-    # Kiem tra neu khong co tab extension nao
+    # Bail out if no extension tab was found
     if len(extensionTabNameLst) == 0:
         alert("No Extension/Add-in tabs found!", title="Extension Tab Manager")
         return
 
-    # Tao checkbox list
+    # Build the checkbox list
     currentLst = CheckBoxForListItem(extensionTabNameLst, visibleTabNameLst)
-    
-    # Hien thi dialog voi ban quyen
+
+    # Show the dialog with the copyright notice
     dialog_title = "Extension Tab Manager - Select Tabs to Show\nCopyright (c) 2025 by Dang Quoc Truong (DQT)"
     
     selectedTabNameLst = SelectFromList.show(
@@ -136,23 +136,23 @@ def main_task():
     )
 
     if selectedTabNameLst is not None:
-        # Tao danh sach cac tab can an
+        # Build the list of tabs to hide
         hideTabNameLst = []
         for i in extensionTabNameLst:
             if i not in selectedTabNameLst:
                 hideTabNameLst.append(i)
 
-        # Tao file luu tru
+        # Build the storage file path
         memory_data_path = TempMemory(tool_name, True)[5]
 
-        # Ap dung thay doi va luu data
+        # Apply the change and save the data
         try:
             with codecs.open(memory_data_path, "w", encoding="utf-8") as textfile:
-                # Ghi thong tin ban quyen vao file
+                # Write the copyright notice into the file
                 textfile.write("# Extension Tab Manager\n")
                 textfile.write("# Copyright (c) 2025 by Dang Quoc Truong (DQT)\n")
                 textfile.write("# Hidden Tabs:\n")
-                
+
                 for tab in extensionTabLst:
                     if tab.Title in hideTabNameLst:
                         tab.IsVisible = False
@@ -160,8 +160,8 @@ def main_task():
                         textfile.write("\n")
                     else:
                         tab.IsVisible = True
-            
-            # Thong bao
+
+            # Notify the result
             visible_count = len(selectedTabNameLst)
             hidden_count = len(hideTabNameLst)
             alert("Extension Tab Manager completed!\n\nVisible: {}\nHidden: {}\n\nCopyright (c) 2025 by Dang Quoc Truong (DQT)".format(

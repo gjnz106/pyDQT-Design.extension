@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ribbon Name Manager - UI Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Ribbon Name Manager</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Ribbon layout</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">UI Toolset</a><span>&rsaquo;</span>Ribbon Name Manager</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Shortens or restores Revit's ribbon tab names with full control. Reads
+      every live ribbon tab, lets you edit each short name inline, toggle
+      between short and full for all tabs at once, and persists your own
+      mapping - no external Snippets dependency or fixed per-language JSON
+      files like the classic tool needed.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Grid columns</h2>
+    <dl class="kv">
+      <dt class="v-dark">Current Name</dt><dd>the tab's real/original name (read-only)</dd>
+      <dt class="v-gold">Short Name</dt><dd>the abbreviation to switch to - double-click to edit</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Double-click any Short Name cell to type a custom abbreviation.
+        Built-in defaults are pre-filled for common Revit and popular
+        extension tabs (Architecture &rarr; Arch, Systems &rarr; MEP, and so on).</li>
+      <li><b>Apply Short</b> renames every live tab to its short name.</li>
+      <li><b>Restore Full</b> puts every tab's original full name back.</li>
+      <li><b>Save Map</b> remembers your edited short names so they're
+        pre-filled again next time the tool opens.</li>
+      <li><b>Reset</b> puts the Short Name column back to the built-in
+        defaults - this only changes the grid, click Apply Short afterward
+        to actually rename tabs.</li>
+      <li><b>Close</b> exits; the status line under the title reports how
+        many tabs the last action changed.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Switching to short names and back is non-destructive: the tool
+      remembers each tab's true original name the first time it sees it, so
+      Restore Full works correctly even after repeated renames.
+    </div>
+    <div class="box tip">
+      An unsaved edit to a Short Name cell is committed automatically before
+      any button action runs, so there's no need to click away from the
+      cell first.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="bg_theme.html"><span class="dir">&larr; Previous</span>Background Theme</a>
+    <a class="next" href="check_update.html"><span class="dir">Next tool &rarr;</span>Check Update</a>
+  </div>
+  <footer class="site">UI Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
