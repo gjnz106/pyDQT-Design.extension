@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Select By Category - Select Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Select By Category</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Filtered picking</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Select Toolset</a><span>&rsaquo;</span>Select By Category</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Pick elements in the view while Revit only allows the categories you
+      chose - everything else becomes un-pickable for that pick session.
+      Great for a messy area where you only care about a few categories
+      (e.g. just Walls + Doors, ignoring furniture and annotation).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool.</li>
+      <li>Tick the categories you want to be selectable, from every real
+        category in the model (plus Grids, Levels and Viewports, which are
+        added even though they're not always "real" model categories).</li>
+      <li>Click and drag a window, or click elements one by one - only the
+        chosen categories respond; everything else is ignored by the
+        picker entirely.</li>
+      <li>Press <b>Finish</b> (or Esc to cancel) to apply the picked
+        elements as the active Revit selection.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      This restricts picking, not visibility - restricted categories are
+      still visible in the view, just unclickable while the picker is
+      active.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="select_linked.html"><span class="dir">&larr; Previous</span>Select Linked</a>
+    <a class="next" href="select_in_place.html"><span class="dir">Next tool &rarr;</span>Select In-Place</a>
+  </div>
+  <footer class="site">Select Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

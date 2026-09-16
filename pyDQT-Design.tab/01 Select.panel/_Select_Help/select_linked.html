@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Select Linked - Select Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Select Linked</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Find &amp; select</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Select Toolset</a><span>&rsaquo;</span>Select Linked</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Selects every model element of a chosen Revit Link in the active
+      view, all at once - normally you can only pick linked elements one
+      at a time (or Tab through overlaps). Useful before a bulk
+      Hide/Unhide/Filter/Isolate action on an entire link.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Run the tool from a Plan, Section, Elevation, 3D, Drafting or
+        Sheet view (schedules and browser views aren't supported).</li>
+      <li>Pick a Revit Link from the list - each entry shows the link
+        instance name and the linked document's title (or
+        <code>&lt;Not Loaded&gt;</code> if it isn't currently loaded).</li>
+      <li>Every selectable model element of that link, in the active view,
+        becomes the current selection.</li>
+      <li>From there: right-click &gt; Hide/Unhide in View &gt; Elements,
+        Filter, Tab, Isolate, and so on.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      A link that shows <code>&lt;Not Loaded&gt;</code> must be reloaded
+      first (Manage &gt; Manage Links) before its elements can be selected.
+    </div>
+    <div class="box tip">
+      A handful of linked elements (constraints, internal markers, and a
+      few other non-visual types) can't produce a selectable reference and
+      are silently skipped - the closing report shows how many, if any.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="material_select_element.html"><span class="dir">&larr; Previous</span>Material Select Element</a>
+    <a class="next" href="select_by_category.html"><span class="dir">Next tool &rarr;</span>Select By Category</a>
+  </div>
+  <footer class="site">Select Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

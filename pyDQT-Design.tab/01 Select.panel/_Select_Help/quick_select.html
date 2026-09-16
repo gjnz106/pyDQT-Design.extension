@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quick Select Manager - Select Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Quick Select Manager</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Find &amp; select</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Select Toolset</a><span>&rsaquo;</span>Quick Select Manager</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      A searchable, filterable grid of every element in the active view,
+      the whole project, or the current selection - tick the ones you want
+      and jump straight to Zoom To, Select in Model, Isolate, or Show
+      Element, without hunting through the model by hand.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Stat cards</h2>
+    <dl class="kv">
+      <dt class="v-dark">Total Elements</dt><dd>rows currently matching the Display/Filter/Search/Category settings</dd>
+      <dt class="v-gold">Checked</dt><dd>rows ticked for the action buttons</dd>
+      <dt class="v-green">Categories</dt><dd>distinct categories among the visible rows</dd>
+      <dt class="v-blue">Families</dt><dd>distinct families among the visible rows</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Narrowing the list</h2>
+    <dl class="kv">
+      <dt class="v-dark">Display</dt><dd>Active View, Entire Project, or Current Selection - the scope to collect from</dd>
+      <dt class="v-dark">Search</dt><dd>matches category, family, type, name/mark, or element ID</dd>
+      <dt class="v-dark">Filter By</dt><dd>All Elements / Model Elements / Annotation / MEP Elements / Structural</dd>
+      <dt class="v-dark">Category list</dt><dd>click a category to show only that category's rows</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick a Display scope, then narrow with Search / Filter By / Category as needed.</li>
+      <li>Tick the rows you want, or use <b>Check All</b> / <b>Uncheck All</b> / <b>Invert</b>.</li>
+      <li><b>Zoom To</b> frames the first checked (or selected) row in the active view.</li>
+      <li><b>Select in Model</b> applies the checked rows as the live Revit selection.</li>
+      <li><b>Isolate</b> temporarily isolates the checked rows in the active view.</li>
+      <li><b>Show Element</b> uses Revit's own "show element" navigation, falling back to Zoom To.</li>
+      <li><b>Refresh</b> re-collects from the model (after moving/deleting elements); <b>Close</b> exits.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Double-click a row to zoom to it directly, without checking it first.
+    </div>
+    <div class="box tip">
+      Shift+Click / Ctrl+Click in the grid does normal range/multi-select;
+      clicking a checkbox while several rows are selected toggles all of
+      them together.
+    </div>
+    <div class="box tip">
+      If Active View returns nothing, the tool automatically retries against
+      the whole project rather than showing an empty grid.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="next" href="material_select_element.html"><span class="dir">Next tool &rarr;</span>Material Select Element</a>
+  </div>
+  <footer class="site">Select Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
