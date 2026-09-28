@@ -9,6 +9,7 @@ __author__ = "Dang Quoc Truong (DQT)"
 
 import os
 import clr
+from collections import OrderedDict
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System')
@@ -1267,8 +1268,14 @@ class AdvancedViewManagerWindow(Window):
         self.data_grid.MouseDoubleClick += self._on_row_double_click
         self.data_grid.PreviewMouseRightButtonDown += self._on_header_right_click  # RIGHT-CLICK
 
-        # Track custom parameter columns
-        self.custom_columns = {}  # {col_name: param_name}
+        # Custom parameter columns in the order they were added:
+        # {col_name: param_name}. Each keeps the binding name it got when
+        # added (custom_bindings). Deriving it from the column's position
+        # made columns show each other's values after a removal/re-add, and
+        # a plain dict has no fixed order in IronPython.
+        self.custom_columns = OrderedDict()
+        self.custom_bindings = {}  # {col_name: "param_N"}
+        self._next_binding = 0
 
         columns = [
             ("View Name", "name", 200),
@@ -1420,7 +1427,40 @@ class AdvancedViewManagerWindow(Window):
             except:
                 pass
         
+        # Every reload (Refresh, Batch Rename, Duplicate, Delete, Excel)
+        # rebuilds the rows, so the custom columns are refilled here.
+        self._fill_custom_params(self.all_views)
         self._update_summary_cards()
+    
+    def _param_display_value(self, element, param_name):
+        """A view parameter's value as the text shown in a custom column."""
+        try:
+            param = element.LookupParameter(param_name)
+            if not param or not param.HasValue:
+                return ""
+            if param.StorageType == StorageType.String:
+                return param.AsString() or ""
+            if param.StorageType == StorageType.Integer:
+                return str(param.AsInteger())
+            if param.StorageType == StorageType.Double:
+                return str(param.AsDouble())
+            if param.StorageType == StorageType.ElementId:
+                elem_id = param.AsElementId()
+                if elem_id and _eid_int(elem_id) > 0:
+                    elem = self.doc.GetElement(elem_id)
+                    return elem.Name if elem else str(_eid_int(elem_id))
+                return ""
+            return param.AsValueString() or ""
+        except:
+            return ""
+    
+    def _fill_custom_params(self, items):
+        """Set every custom parameter column's value on these rows."""
+        for col_name, param_name in self.custom_columns.items():
+            binding_name = self.custom_bindings[col_name]
+            for item in items:
+                setattr(item, binding_name,
+                        self._param_display_value(item.element, param_name))
     
     def _get_all_templates(self):
         """Get all view templates"""
@@ -1552,6 +1592,7 @@ class AdvancedViewManagerWindow(Window):
         if updated is None:
             return
         
+        self._fill_custom_params(items)
         self.data_grid.Items.Refresh()
         msg = "Updated {0} of {1} view(s).".format(updated, len(items))
         if failed:
@@ -2269,10 +2310,9 @@ class AdvancedViewManagerWindow(Window):
                     ]
                     
                     # Custom parameter columns
-                    for i in range(len(self.custom_columns)):
-                        binding_name = "param_{}".format(i)
-                        value = getattr(view_item, binding_name, "") if hasattr(view_item, binding_name) else ""
-                        row.append(value or "")
+                    for col_name in self.custom_columns:
+                        binding_name = self.custom_bindings[col_name]
+                        row.append(getattr(view_item, binding_name, "") or "")
                     
                     rows.append(row)
                 except:
@@ -2854,6 +2894,17 @@ class AdvancedViewManagerWindow(Window):
             custom_param_updates = 0
             custom_param_errors = []
             
+            # View templates by name, collected once. Templates are views
+            # (IsTemplate), not element types - the lookup used to filter on
+            # WhereElementIsElementType() and so never found any template.
+            templates = {}
+            for v in FilteredElementCollector(self.doc)\
+                    .OfClass(View)\
+                    .WhereElementIsNotElementType():
+                if v.IsTemplate:
+                    templates[v.Name] = v.Id
+            templates_not_found = set()
+            
             for update in updates:
                 view = None
                 
@@ -2884,18 +2935,17 @@ class AdvancedViewManagerWindow(Window):
                     except:
                         pass
                 
-                # Update template
-                if update.get('template') and update['template'] != "None":
-                    templates = FilteredElementCollector(self.doc)\
-                        .OfClass(View)\
-                        .WhereElementIsElementType()
-                    for tmpl in templates:
-                        if tmpl.Name == update['template']:
-                            try:
-                                view.ViewTemplateId = tmpl.Id
-                            except:
-                                pass
-                            break
+                # Update template ("None" / blank leaves it as is)
+                template_name = (update.get('template') or "").strip()
+                if template_name and template_name != "None":
+                    template_id = templates.get(template_name)
+                    if template_id is None:
+                        templates_not_found.add(template_name)
+                    elif _eid_int(view.ViewTemplateId) != _eid_int(template_id):
+                        try:
+                            view.ViewTemplateId = template_id
+                        except:
+                            pass
                 
                 # Update scale
                 if update.get('scale'):
@@ -2965,7 +3015,15 @@ class AdvancedViewManagerWindow(Window):
             msg = "Updated {0} views from Excel!".format(count)
             if skipped > 0:
                 msg += "\n{0} views skipped (not found).".format(skipped)
-            
+
+            if templates_not_found:
+                names = sorted(templates_not_found)
+                msg += "\n\nView template(s) not found in this model - left unchanged:"
+                for name in names[:5]:
+                    msg += "\n- {}".format(name)
+                if len(names) > 5:
+                    msg += "\n... and {} more".format(len(names) - 5)
+
             if custom_param_updates > 0:
                 msg += "\n\nCustom parameters: {0} updates applied successfully!".format(custom_param_updates)
             
@@ -2989,40 +3047,8 @@ class AdvancedViewManagerWindow(Window):
     
     def _refresh_all_data(self):
         """Refresh views and custom parameter values"""
-        # Reload all views from Revit
+        # Reload all views from Revit (refills the custom columns too)
         self._load_all_views()
-        
-        # Re-populate custom parameter columns if any exist
-        if self.custom_columns:
-            for i, (col_name, param_name) in enumerate(self.custom_columns.items()):
-                binding_name = "param_{}".format(i)
-                
-                # Update all items with fresh parameter values
-                for item in self.all_views:
-                    try:
-                        param = item.element.LookupParameter(param_name)
-                        if param and param.HasValue:
-                            if param.StorageType == StorageType.String:
-                                value = param.AsString() or ""
-                            elif param.StorageType == StorageType.Integer:
-                                value = str(param.AsInteger())
-                            elif param.StorageType == StorageType.Double:
-                                value = str(param.AsDouble())
-                            elif param.StorageType == StorageType.ElementId:
-                                elem_id = param.AsElementId()
-                                if elem_id and _eid_int(elem_id) > 0:
-                                    elem = self.doc.GetElement(elem_id)
-                                    value = elem.Name if elem else str(_eid_int(elem_id))
-                                else:
-                                    value = ""
-                            else:
-                                value = param.AsValueString() or ""
-                        else:
-                            value = ""
-                        
-                        setattr(item, binding_name, value)
-                    except:
-                        setattr(item, binding_name, "")
         
         # Reapply filters
         self._apply_filters()
@@ -3310,10 +3336,11 @@ class AdvancedViewManagerWindow(Window):
                               MessageBoxButton.OK, MessageBoxImage.Information)
                 return
             
-            # Add column
-            col_index = len(self.custom_columns)
+            # Add column - with a binding name of its own that never changes
+            # or gets reused, whatever is removed/added later
             col_name = param_name
-            binding_name = "param_{}".format(col_index)
+            binding_name = "param_{}".format(self._next_binding)
+            self._next_binding += 1
             
             new_col = DataGridTextColumn()
             new_col.Header = col_name
@@ -3324,37 +3351,12 @@ class AdvancedViewManagerWindow(Window):
             
             # Track it
             self.custom_columns[col_name] = param_name
+            self.custom_bindings[col_name] = binding_name
             
             # Update all items with parameter value
-            populated_count = 0
-            for item in self.all_views:
-                try:
-                    param = item.element.LookupParameter(param_name)
-                    if param and param.HasValue:
-                        if param.StorageType == StorageType.String:
-                            value = param.AsString() or ""
-                        elif param.StorageType == StorageType.Integer:
-                            value = str(param.AsInteger())
-                        elif param.StorageType == StorageType.Double:
-                            value = str(param.AsDouble())
-                        elif param.StorageType == StorageType.ElementId:
-                            elem_id = param.AsElementId()
-                            if elem_id and _eid_int(elem_id) > 0:
-                                elem = self.doc.GetElement(elem_id)
-                                value = elem.Name if elem else str(_eid_int(elem_id))
-                            else:
-                                value = ""
-                        else:
-                            value = param.AsValueString() or ""
-                        
-                        if value:
-                            populated_count += 1
-                    else:
-                        value = ""
-                    
-                    setattr(item, binding_name, value)
-                except:
-                    setattr(item, binding_name, "")
+            self._fill_custom_params(self.all_views)
+            populated_count = len([item for item in self.all_views
+                                   if getattr(item, binding_name, "")])
             
             # Refresh grid
             self.data_grid.Items.Refresh()
@@ -3380,16 +3382,22 @@ class AdvancedViewManagerWindow(Window):
             if col_name not in self.custom_columns:
                 return
             
-            # Find and remove column
+            # Find the column by its binding, not its header - a parameter
+            # can share a name with a built-in column (e.g. "Scale")
+            binding_name = self.custom_bindings.get(col_name)
             col_to_remove = None
             for col in self.data_grid.Columns:
-                if col.Header == col_name:
-                    col_to_remove = col
-                    break
+                try:
+                    if col.Binding.Path.Path == binding_name:
+                        col_to_remove = col
+                        break
+                except:
+                    continue
             
             if col_to_remove:
                 self.data_grid.Columns.Remove(col_to_remove)
                 del self.custom_columns[col_name]
+                del self.custom_bindings[col_name]
                 
                 MessageBox.Show("Parameter column '{}' removed".format(col_name),
                               "Success", MessageBoxButton.OK, MessageBoxImage.Information)
