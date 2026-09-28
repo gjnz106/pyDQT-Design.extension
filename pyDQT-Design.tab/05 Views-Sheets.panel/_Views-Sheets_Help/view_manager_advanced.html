@@ -43,7 +43,7 @@
     <h2>Filters</h2>
     <dl class="kv">
       <dt class="v-dark">Search</dt><dd>matches view name</dd>
-      <dt class="v-dark">Filter</dt><dd>All Sheets / Floor Plan / Ceiling Plan / Section / Elevation / 3D View</dd>
+      <dt class="v-dark">Filter</dt><dd>All Types / Floor Plan / Ceiling Plan / Section / Elevation / 3D View</dd>
       <dt class="v-dark">Has Template</dt><dd>All Views / With Template / Without Template</dd>
       <dt class="v-dark">On Sheets</dt><dd>All Views / On Sheets / Not On Sheets</dd>
     </dl>
@@ -53,14 +53,44 @@
     <h2>Workflow</h2>
     <ol class="steps">
       <li>Narrow the grid with Search and the Filter dropdowns; <b>Select
-        All</b> / <b>Clear All</b> manage the checked rows.</li>
+        All</b> / <b>Clear All</b> manage the selected rows.</li>
+      <li><b>Edit...</b> (or double-click a row) opens the Edit Views
+        dialog: View Name (one view at a time), View Template, Scale,
+        Detail Level and Title on Sheet. Only ticked fields are applied,
+        to every selected view, as one step you can Undo.</li>
       <li><b>Excel</b> exports the current (filtered) view list; <b>Refresh</b>
         re-scans the model after external changes.</li>
       <li><b>Batch Rename</b> opens a find/replace-style rename dialog for
-        the checked views.</li>
-      <li><b>Duplicate</b> and <b>Delete</b> act on the checked views.</li>
+        the selected views.</li>
+      <li><b>Duplicate</b> and <b>Delete</b> act on the selected views.</li>
       <li><b>Close</b> exits the tool.</li>
     </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box fixed">
+      <b>Opening no longer freezes or crashes Revit on large models.</b>
+      The sheet columns used to scan every viewport in the model four
+      times per view, so a model with thousands of views and viewports
+      stayed "Not Responding" for minutes. It is now one scan per load.
+      Reports, panel schedules, renderings, walkthroughs and the hidden
+      revision schedules inside titleblocks are no longer listed - they
+      are not views you manage here, and reading their properties could
+      bring Revit down.
+    </div>
+    <div class="box fixed">
+      <b>The grid is read-only; edits go through Edit...</b> Typing
+      straight into grid cells (and the drop-down cells) was the WPF
+      pattern that can crash Revit under IronPython, so editing moved to
+      the Edit Views dialog, which also changes many views at once.
+    </div>
+    <div class="box fixed">
+      <b>Title on Sheet</b> now shows and edits the view's own Title on
+      Sheet parameter. It used to show the viewport's Detail Number under
+      that header. Crop columns in the Excel export are blank for views
+      with no crop region (sheets, schedules, legends, drafting views).
+    </div>
   </div>
 
   <div class="pagenav">

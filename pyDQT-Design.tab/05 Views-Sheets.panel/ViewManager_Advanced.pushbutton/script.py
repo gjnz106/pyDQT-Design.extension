@@ -19,7 +19,7 @@ from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI import *
 from System.Windows import Window, MessageBox, MessageBoxButton, MessageBoxImage, GridLength, GridUnitType, Thickness
 from System.Windows.Controls import *
-from System.Windows.Media import SolidColorBrush, Color, Brushes
+from System.Windows.Media import Brushes, BrushConverter
 from System.Windows.Forms import SaveFileDialog, OpenFileDialog, DialogResult
 from System.Collections.ObjectModel import ObservableCollection
 import System
@@ -67,6 +67,92 @@ def _make_eid(int_val):
         except:
             return ElementId(int_val)
 
+
+def _brush(hex_color):
+    """SolidColorBrush from "#RRGGBB" - BrushConverter is the IronPython-safe
+    route; Color.FromArgb/FromRgb are unreliable there."""
+    return BrushConverter().ConvertFromString(hex_color)
+
+
+def _view_types(names):
+    """The ViewType members with these names that exist in this Revit
+    version (e.g. SystemsAnalysisReport is 2024+), looked up by name so a
+    missing one never breaks the script."""
+    found = set()
+    for name in names:
+        vt = getattr(ViewType, name, None)
+        if vt is not None:
+            found.add(vt)
+    return found
+
+
+# Views the Project Browser shows under Reports / Renderings / Panel
+# Schedules etc., plus Revit's own internal views. They are not views this
+# tool manages, and reading crop/scale/detail properties on them runs in
+# Revit's native code, where a failure takes Revit down instead of raising a
+# Python exception - so they are skipped before any property is read.
+SKIPPED_VIEW_TYPES = _view_types((
+    "Undefined", "Internal", "ProjectBrowser", "SystemBrowser",
+    "PanelSchedule", "CostReport", "LoadsReport", "PresureLossReport",
+    "PressureLossReport", "Report", "SystemsAnalysisReport",
+    "Rendering", "Walkthrough"))
+
+# The only view types with a crop region worth reading and exporting.
+CROPPABLE_VIEW_TYPES = _view_types((
+    "FloorPlan", "CeilingPlan", "EngineeringPlan", "AreaPlan",
+    "Section", "Elevation", "Detail", "ThreeD"))
+
+
+def _is_manageable_view(view):
+    """True for the views listed in the grid: not a template, not one of
+    SKIPPED_VIEW_TYPES, and not the hidden revision schedule every sheet's
+    titleblock carries."""
+    try:
+        if view.IsTemplate:
+            return False
+        if view.ViewType in SKIPPED_VIEW_TYPES:
+            return False
+        if getattr(view, "IsTitleblockRevisionSchedule", False):
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _build_viewport_map(doc):
+    """{view id (int): [sheet count, sheet number, sheet name]} from ONE
+    pass over the model's Viewports.
+
+    Each row used to run four full Viewport scans of its own (count, title,
+    sheet number, sheet name) - 4 x views x viewports Revit calls on every
+    open and refresh, which kept a large model "Not Responding" for minutes
+    until Revit went down. Sheet number/name come from the first Viewport
+    found for the view, as before."""
+    vp_map = {}
+    sheets = {}
+    try:
+        viewports = FilteredElementCollector(doc)\
+            .OfClass(Viewport)\
+            .WhereElementIsNotElementType()
+        for vp in viewports:
+            try:
+                entry = vp_map.setdefault(_eid_int(vp.ViewId), [0, "N/A", "N/A"])
+                entry[0] += 1
+                if entry[1] != "N/A":
+                    continue
+                sheet_key = _eid_int(vp.SheetId)
+                if sheet_key not in sheets:
+                    sheet = doc.GetElement(vp.SheetId)
+                    sheets[sheet_key] = (sheet.SheetNumber or "N/A",
+                                         sheet.Name or "N/A") if sheet else None
+                if sheets[sheet_key]:
+                    entry[1], entry[2] = sheets[sheet_key]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return vp_map
+
 # =====================================================
 # CONFIG - DQT COLORS
 # =====================================================
@@ -87,7 +173,9 @@ class Config:
 class EnhancedViewItem:
     """Enhanced view item with all properties"""
     
-    def __init__(self, view, doc):
+    def __init__(self, view, doc, vp_map):
+        """vp_map: _build_viewport_map(doc), built once per load and shared
+        by every row."""
         self.element = view
         self.doc = doc
         self.id = view.Id
@@ -96,22 +184,39 @@ class EnhancedViewItem:
         self.view_template = self._get_view_template(view)
         self.scale = self._get_scale(view)
         self.detail_level = self._get_detail_level(view)
-        self.on_sheets = self._get_sheet_count(view)
         self.title_on_sheet = self._get_title_on_sheet(view)
         self.referencing_sheet = self._get_referencing_sheet(view)
-        self.sheet_number = self._get_sheet_number(view)
-        self.sheet_name = self._get_sheet_name(view)
+        vp_info = vp_map.get(_eid_int(view.Id))
+        if vp_info:
+            self.on_sheets, self.sheet_number, self.sheet_name = vp_info
+        else:
+            self.on_sheets, self.sheet_number, self.sheet_name = 0, "N/A", "N/A"
         self.level_name = self._get_level_name(view)
-        
+
         # Crop Box data
         crop_data = self._get_crop_data(view)
         self.crop_active = crop_data[0]
         self.crop_visible = crop_data[1]
         self.crop_min = crop_data[2]   # "x,y,z" string
         self.crop_max = crop_data[3]   # "x,y,z" string
-    
+
+    def refresh_editable(self, view):
+        """Re-read the fields the Edit dialog can change, after an edit."""
+        self.element = view
+        self.name = view.Name
+        self.view_template = self._get_view_template(view)
+        self.scale = self._get_scale(view)
+        self.detail_level = self._get_detail_level(view)
+        self.title_on_sheet = self._get_title_on_sheet(view)
+
     def _get_crop_data(self, view):
-        """Get crop box data: (active, visible, min_str, max_str)"""
+        """Get crop box data: (active, visible, min_str, max_str).
+
+        Blank for view types without a crop region (sheets, schedules,
+        legends, drafting views): nothing to read there, and blank Excel
+        cells leave those views untouched on import."""
+        if view.ViewType not in CROPPABLE_VIEW_TYPES:
+            return ("", "", "", "")
         try:
             crop_active = "Yes" if view.CropBoxActive else "No"
         except:
@@ -199,71 +304,22 @@ class EnhancedViewItem:
         except:
             return "N/A"
     
-    def _get_sheet_count(self, view):
-        try:
-            count = 0
-            collector = FilteredElementCollector(self.doc)\
-                .OfClass(Viewport)\
-                .WhereElementIsNotElementType()
-            
-            for vp in collector:
-                if vp.ViewId == view.Id:
-                    count += 1
-            return count
-        except:
-            return 0
-    
     def _get_title_on_sheet(self, view):
+        """The view's own "Title on Sheet" parameter. This column used to
+        show the Viewport's Detail Number under this header instead."""
         try:
-            collector = FilteredElementCollector(self.doc)\
-                .OfClass(Viewport)\
-                .WhereElementIsNotElementType()
-            
-            for vp in collector:
-                if vp.ViewId == view.Id:
-                    title_param = vp.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
-                    if title_param:
-                        return title_param.AsString() or "N/A"
-                    return "N/A"
-            return "N/A"
+            param = view.get_Parameter(BuiltInParameter.VIEW_DESCRIPTION)
+            if param:
+                return param.AsString() or ""
         except:
-            return "N/A"
+            pass
+        return ""
     
     def _get_referencing_sheet(self, view):
         try:
             param = view.get_Parameter(BuiltInParameter.VIEW_REFERENCING_SHEET)
             if param:
                 return param.AsString() or "N/A"
-            return "N/A"
-        except:
-            return "N/A"
-    
-    def _get_sheet_number(self, view):
-        try:
-            collector = FilteredElementCollector(self.doc)\
-                .OfClass(Viewport)\
-                .WhereElementIsNotElementType()
-            
-            for vp in collector:
-                if vp.ViewId == view.Id:
-                    sheet = self.doc.GetElement(vp.SheetId)
-                    if sheet:
-                        return sheet.SheetNumber or "N/A"
-            return "N/A"
-        except:
-            return "N/A"
-    
-    def _get_sheet_name(self, view):
-        try:
-            collector = FilteredElementCollector(self.doc)\
-                .OfClass(Viewport)\
-                .WhereElementIsNotElementType()
-            
-            for vp in collector:
-                if vp.ViewId == view.Id:
-                    sheet = self.doc.GetElement(vp.SheetId)
-                    if sheet:
-                        return sheet.Name or "N/A"
             return "N/A"
         except:
             return "N/A"
@@ -295,8 +351,7 @@ class BatchRenameDialog(Window):
         self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner
         
         # Colors
-        bg_color = Color.FromArgb(255, 254, 248, 231)
-        self.Background = SolidColorBrush(bg_color)
+        self.Background = _brush("#FEF8E7")
         
         self._build_ui()
         self._update_preview()
@@ -559,7 +614,7 @@ class BatchRenameDialog(Window):
         self._update_preview()
     
     def _on_apply(self, sender, args):
-        t = Transaction(self.doc, "Batch Rename Views")
+        t = Transaction(self.doc, "DQT - Batch Rename Views")
         t.Start()
         
         try:
@@ -598,6 +653,216 @@ class BatchRenameDialog(Window):
         self.Close()
 
 # =====================================================
+# EDIT VIEWS DIALOG
+# =====================================================
+
+class EditViewsDialog(Window):
+    """Edit View Name / View Template / Scale / Detail Level / Title on
+    Sheet for the selected views.
+
+    Replaces in-cell editing on the main grid (see _create_main_grid). Each
+    field has a tick box and only ticked fields are applied; typing in a
+    field or picking from its list ticks it. Fields start at the value the
+    selected views share, blank when they differ. The dialog only collects
+    the changes - the main window applies them in one transaction."""
+    
+    DETAIL_LEVELS = ["Coarse", "Medium", "Fine"]
+    
+    def __init__(self, items, template_names):
+        self.items = items
+        self.template_names = template_names
+        self.changes = None
+        
+        self.Title = "Edit Views - Dang Quoc Truong (DQT)"
+        self.Width = 520
+        self.SizeToContent = System.Windows.SizeToContent.Height
+        self.ResizeMode = System.Windows.ResizeMode.NoResize
+        self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner
+        self.Background = _brush("#FEF8E7")
+        
+        self._build_ui()
+    
+    def _common(self, attr):
+        """The value every selected view shares for attr, else None."""
+        values = set(str(getattr(item, attr, "")) for item in self.items)
+        return values.pop() if len(values) == 1 else None
+    
+    def _build_ui(self):
+        root = StackPanel()
+        root.Margin = Thickness(15)
+        
+        title = TextBlock()
+        title.Text = "Edit {0} View(s)".format(len(self.items))
+        title.FontSize = 16
+        title.FontWeight = System.Windows.FontWeights.Bold
+        title.Foreground = _brush("#5D4E37")
+        title.Margin = Thickness(0, 0, 0, 4)
+        root.Children.Add(title)
+        
+        hint = TextBlock()
+        hint.Text = "Only ticked fields are changed."
+        hint.FontSize = 11
+        hint.Foreground = _brush("#666666")
+        hint.Margin = Thickness(0, 0, 0, 12)
+        root.Children.Add(hint)
+        
+        form = Grid()
+        form.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(150)))
+        form.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(1, GridUnitType.Star)))
+        
+        single = len(self.items) == 1
+        self.name_chk, self.name_box = self._add_text_row(
+            form, 0, "View Name",
+            self.items[0].name if single else "(one view at a time - use Batch Rename)")
+        if not single:
+            self.name_chk.IsEnabled = False
+            self.name_box.IsEnabled = False
+        
+        self.template_chk, self.template_combo = self._add_combo_row(
+            form, 1, "View Template", self.template_names, self._common("view_template"))
+        
+        scale = self._common("scale")
+        self.scale_chk, self.scale_box = self._add_text_row(
+            form, 2, "Scale (1 : n)", scale if scale not in (None, "0") else "")
+        
+        self.detail_chk, self.detail_combo = self._add_combo_row(
+            form, 3, "Detail Level", self.DETAIL_LEVELS, self._common("detail_level"))
+        
+        self.title_chk, self.title_box = self._add_text_row(
+            form, 4, "Title on Sheet", self._common("title_on_sheet") or "")
+        
+        root.Children.Add(form)
+        
+        buttons = StackPanel()
+        buttons.Orientation = Orientation.Horizontal
+        buttons.HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+        buttons.Margin = Thickness(0, 8, 0, 0)
+        
+        apply_btn = Button()
+        apply_btn.Content = "Apply"
+        apply_btn.Width = 100
+        apply_btn.Height = 32
+        apply_btn.Margin = Thickness(0, 0, 10, 0)
+        apply_btn.Background = _brush("#F0CC88")
+        apply_btn.BorderBrush = _brush("#D4B87A")
+        apply_btn.Foreground = _brush("#5D4E37")
+        apply_btn.FontWeight = System.Windows.FontWeights.SemiBold
+        apply_btn.Click += self._on_apply
+        
+        cancel_btn = Button()
+        cancel_btn.Content = "Cancel"
+        cancel_btn.Width = 100
+        cancel_btn.Height = 32
+        cancel_btn.Click += self._on_cancel
+        
+        buttons.Children.Add(apply_btn)
+        buttons.Children.Add(cancel_btn)
+        root.Children.Add(buttons)
+        
+        footer = TextBlock()
+        footer.Text = "Dang Quoc Truong - DQT (c) 2026"
+        footer.FontSize = 10
+        footer.Foreground = _brush("#5D4E37")
+        footer.HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        footer.Margin = Thickness(0, 12, 0, 0)
+        root.Children.Add(footer)
+        
+        self.Content = root
+    
+    def _add_label(self, form, row, label):
+        form.RowDefinitions.Add(RowDefinition(Height=GridLength.Auto))
+        chk = CheckBox()
+        chk.Content = label
+        chk.VerticalAlignment = System.Windows.VerticalAlignment.Center
+        chk.Margin = Thickness(0, 0, 10, 8)
+        Grid.SetRow(chk, row)
+        Grid.SetColumn(chk, 0)
+        form.Children.Add(chk)
+        return chk
+    
+    def _add_text_row(self, form, row, label, value):
+        chk = self._add_label(form, row, label)
+        box = TextBox()
+        box.Text = value
+        box.Height = 26
+        box.Margin = Thickness(0, 0, 0, 8)
+        box.VerticalContentAlignment = System.Windows.VerticalAlignment.Center
+        Grid.SetRow(box, row)
+        Grid.SetColumn(box, 1)
+        form.Children.Add(box)
+        
+        def on_changed(sender, args):
+            if chk.IsEnabled:
+                chk.IsChecked = True
+        box.TextChanged += on_changed
+        return chk, box
+    
+    def _add_combo_row(self, form, row, label, values, current):
+        chk = self._add_label(form, row, label)
+        combo = ComboBox()
+        for value in values:
+            combo.Items.Add(value)
+        if current is not None and current in values:
+            combo.SelectedIndex = list(values).index(current)
+        combo.Height = 26
+        combo.Margin = Thickness(0, 0, 0, 8)
+        Grid.SetRow(combo, row)
+        Grid.SetColumn(combo, 1)
+        form.Children.Add(combo)
+        
+        def on_closed(sender, args):
+            if combo.SelectedIndex >= 0:
+                chk.IsChecked = True
+        combo.DropDownClosed += on_closed
+        return chk, combo
+    
+    def _on_apply(self, sender, args):
+        changes = {}
+        
+        if len(self.items) == 1 and self.name_chk.IsChecked:
+            name = (self.name_box.Text or "").strip()
+            if not name:
+                MessageBox.Show("View name cannot be empty.", "Edit Views")
+                return
+            changes['name'] = name
+        
+        if self.template_chk.IsChecked:
+            if self.template_combo.SelectedItem is None:
+                MessageBox.Show("Pick a view template (or None).", "Edit Views")
+                return
+            changes['template'] = str(self.template_combo.SelectedItem)
+        
+        if self.scale_chk.IsChecked:
+            try:
+                scale = int((self.scale_box.Text or "").strip())
+            except ValueError:
+                scale = 0
+            if scale <= 0:
+                MessageBox.Show("Scale must be a whole number above 0, e.g. 100 for 1:100.",
+                                "Edit Views")
+                return
+            changes['scale'] = scale
+        
+        if self.detail_chk.IsChecked:
+            if self.detail_combo.SelectedItem is None:
+                MessageBox.Show("Pick a detail level.", "Edit Views")
+                return
+            changes['detail_level'] = str(self.detail_combo.SelectedItem)
+        
+        if self.title_chk.IsChecked:
+            changes['title'] = self.title_box.Text or ""
+        
+        if not changes:
+            MessageBox.Show("Tick at least one field to change.", "Edit Views")
+            return
+        
+        self.changes = changes
+        self.DialogResult = True
+    
+    def _on_cancel(self, sender, args):
+        self.DialogResult = False
+
+# =====================================================
 # MAIN WINDOW - SHEET MANAGER STYLE
 # =====================================================
 
@@ -622,8 +887,7 @@ class AdvancedViewManagerWindow(Window):
         self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
         
         # Background
-        bg_color = Color.FromArgb(255, 254, 248, 231)
-        self.Background = SolidColorBrush(bg_color)
+        self.Background = _brush("#FEF8E7")
         
         # Build UI first (creates summary card text elements)
         self._build_ui()
@@ -672,8 +936,7 @@ class AdvancedViewManagerWindow(Window):
         """Create title header like Sheet Manager"""
         border = Border()
         # Lighter cream background
-        bg_color = Color.FromArgb(255, 254, 248, 231)
-        border.Background = SolidColorBrush(bg_color)
+        border.Background = _brush("#FEF8E7")
         border.Padding = Thickness(20, 12, 20, 8)
         
         stack = StackPanel()
@@ -686,8 +949,7 @@ class AdvancedViewManagerWindow(Window):
         title.FontSize = 32
         title.FontWeight = System.Windows.FontWeights.Normal
         # Light gold, matching Sheet Manager
-        gold_light = Color.FromArgb(255, 240, 204, 136)
-        title.Foreground = SolidColorBrush(gold_light)
+        title.Foreground = _brush("#F0CC88")
         
         # Spacer
         spacer = TextBlock()
@@ -698,8 +960,7 @@ class AdvancedViewManagerWindow(Window):
         version.Text = "v1.0.0"
         version.FontSize = 16
         version.FontWeight = System.Windows.FontWeights.Normal
-        gold_light2 = Color.FromArgb(255, 240, 204, 136)
-        version.Foreground = SolidColorBrush(gold_light2)
+        version.Foreground = _brush("#F0CC88")
         version.VerticalAlignment = System.Windows.VerticalAlignment.Bottom
         version.Margin = Thickness(0, 0, 0, 4)
         
@@ -717,8 +978,7 @@ class AdvancedViewManagerWindow(Window):
         # Subtitle bar - dark gold
         subtitle_border = Border()
         # Dark gold, matching Sheet Manager
-        gold_dark = Color.FromArgb(255, 218, 165, 32)  # Goldenrod
-        subtitle_border.Background = SolidColorBrush(gold_dark)
+        subtitle_border.Background = _brush("#DAA520")  # Goldenrod
         subtitle_border.Padding = Thickness(20, 10, 20, 10)
         
         subtitle_stack = StackPanel()
@@ -743,8 +1003,7 @@ class AdvancedViewManagerWindow(Window):
         # Cards grid with proper background
         cards_border = Border()
         # Light cream background
-        cream = Color.FromArgb(255, 254, 248, 231)
-        cards_border.Background = SolidColorBrush(cream)
+        cards_border.Background = _brush("#FEF8E7")
         cards_border.Padding = Thickness(10, 10, 10, 10)
         
         cards_grid = Grid()
@@ -789,8 +1048,7 @@ class AdvancedViewManagerWindow(Window):
         card_border = Border()
         card_border.Background = Brushes.White
         # Border color
-        border_color = Color.FromArgb(255, 212, 184, 122)  # #D4B87A from Sheet Manager
-        card_border.BorderBrush = SolidColorBrush(border_color)
+        card_border.BorderBrush = _brush("#D4B87A")  # from Sheet Manager
         card_border.BorderThickness = Thickness(1)
         card_border.CornerRadius = System.Windows.CornerRadius(4)
         card_border.Padding = Thickness(10, 6, 10, 6)  # EXACT from Sheet Manager
@@ -811,8 +1069,7 @@ class AdvancedViewManagerWindow(Window):
         title_text.FontSize = 9  # EXACT from Sheet Manager
         title_text.FontWeight = System.Windows.FontWeights.Bold
         # Gray color #666
-        label_gray = Color.FromArgb(255, 102, 102, 102)
-        title_text.Foreground = SolidColorBrush(label_gray)
+        title_text.Foreground = _brush("#666666")
         
         # Value text
         value_text = TextBlock()
@@ -822,14 +1079,11 @@ class AdvancedViewManagerWindow(Window):
         
         # Colors for different cards - like Sheet Manager
         if index == 3:  # FILTERS card - #666
-            value_color = Color.FromArgb(255, 102, 102, 102)
-            value_text.Foreground = SolidColorBrush(value_color)
+            value_text.Foreground = _brush("#666666")
         elif index == 2:  # CATEGORIES - #4CAF50 green
-            value_color = Color.FromArgb(255, 76, 175, 80)
-            value_text.Foreground = SolidColorBrush(value_color)
+            value_text.Foreground = _brush("#4CAF50")
         elif index == 1:  # SELECTED - #E5B85C orange
-            value_color = Color.FromArgb(255, 229, 184, 92)
-            value_text.Foreground = SolidColorBrush(value_color)
+            value_text.Foreground = _brush("#E5B85C")
         else:  # TOTAL - black
             value_text.Foreground = Brushes.Black
         
@@ -854,8 +1108,7 @@ class AdvancedViewManagerWindow(Window):
         grid = Grid()
         grid.Margin = Thickness(10)
         # Background cream
-        cream = Color.FromArgb(255, 254, 248, 231)
-        grid.Background = SolidColorBrush(cream)
+        grid.Background = _brush("#FEF8E7")
         
         grid.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(200)))  # Left filters
         grid.ColumnDefinitions.Add(ColumnDefinition(Width=GridLength(1, GridUnitType.Star)))  # Main grid
@@ -876,8 +1129,7 @@ class AdvancedViewManagerWindow(Window):
         """Create left filter panel - Sheet Manager exact style"""
         border = Border()
         border.Background = Brushes.White
-        border_gray = Color.FromArgb(255, 230, 230, 230)
-        border.BorderBrush = SolidColorBrush(border_gray)
+        border.BorderBrush = _brush("#E6E6E6")
         border.BorderThickness = Thickness(1)
         border.Padding = Thickness(12)
         border.Margin = Thickness(0, 0, 8, 0)
@@ -906,7 +1158,7 @@ class AdvancedViewManagerWindow(Window):
         filter_title.Margin = Thickness(0, 0, 0, 5)
         
         self.type_combo = ComboBox()
-        self.type_combo.Items.Add("All Sheets")
+        self.type_combo.Items.Add("All Types")
         self.type_combo.Items.Add("Floor Plan")
         self.type_combo.Items.Add("Ceiling Plan")
         self.type_combo.Items.Add("Section")
@@ -999,58 +1251,46 @@ class AdvancedViewManagerWindow(Window):
         border.CornerRadius = System.Windows.CornerRadius(5)
         border.Padding = Thickness(10)
         
+        # Read-only on purpose: in-cell editing (text + ComboBox cells, a
+        # Revit transaction opened inside CellEditEnding) is the IronPython
+        # WPF pattern that crashes Revit outright. Edits go through the
+        # Edit... button / double-click -> EditViewsDialog instead.
         self.data_grid = DataGrid()
-        self.data_grid.IsReadOnly = False
+        self.data_grid.IsReadOnly = True
         self.data_grid.AutoGenerateColumns = False
         self.data_grid.SelectionMode = DataGridSelectionMode.Extended
+        self.data_grid.SelectionUnit = DataGridSelectionUnit.FullRow
         self.data_grid.CanUserSortColumns = True
         self.data_grid.AlternatingRowBackground = System.Windows.Media.Brushes.WhiteSmoke
         self.data_grid.ItemsSource = self.filtered_views
         self.data_grid.SelectionChanged += self._on_selection_changed
-        self.data_grid.CellEditEnding += self._on_cell_edit
+        self.data_grid.MouseDoubleClick += self._on_row_double_click
         self.data_grid.PreviewMouseRightButtonDown += self._on_header_right_click  # RIGHT-CLICK
-        
+
         # Track custom parameter columns
         self.custom_columns = {}  # {col_name: param_name}
-        
-        # Editable columns
+
         columns = [
-            ("View Name", "name", 200, False),
-            ("Type", "view_type", 120, True),
-            ("Level", "level_name", 100, True),
-            ("Scale", "scale", 60, False),
-            ("Detail Level", "detail_level", 100, False),
-            ("Title on Sheet", "title_on_sheet", 120, False),
-            ("Sheet Number", "sheet_number", 100, True),
-            ("Sheet Name", "sheet_name", 150, True),
-            ("On Sheets", "on_sheets", 80, True)
+            ("View Name", "name", 200),
+            ("Type", "view_type", 120),
+            ("Level", "level_name", 100),
+            ("View Template", "view_template", 150),
+            ("Scale", "scale", 60),
+            ("Detail Level", "detail_level", 100),
+            ("Title on Sheet", "title_on_sheet", 150),
+            ("Sheet Number", "sheet_number", 100),
+            ("Sheet Name", "sheet_name", 150),
+            ("On Sheets", "on_sheets", 80)
         ]
-        
-        for header, binding, width, readonly in columns:
+
+        for header, binding, width in columns:
             col = DataGridTextColumn()
             col.Header = header
             col.Binding = System.Windows.Data.Binding(binding)
             col.Width = DataGridLength(width)
-            col.IsReadOnly = readonly
+            col.IsReadOnly = True
             self.data_grid.Columns.Add(col)
-        
-        # Template combo column - insert after Level (index 3)
-        template_col = DataGridComboBoxColumn()
-        template_col.Header = "View Template"
-        template_col.Width = DataGridLength(150)
-        template_col.SelectedItemBinding = System.Windows.Data.Binding("view_template")
-        self.template_items = self._get_all_templates()
-        template_col.ItemsSource = self.template_items
-        self.data_grid.Columns.Insert(3, template_col)
-        
-        # Detail combo column - insert after Scale (index 5)
-        detail_col = DataGridComboBoxColumn()
-        detail_col.Header = "Detail Level"
-        detail_col.Width = DataGridLength(100)
-        detail_col.SelectedItemBinding = System.Windows.Data.Binding("detail_level")
-        detail_col.ItemsSource = ["Coarse", "Medium", "Fine"]
-        self.data_grid.Columns.Insert(5, detail_col)
-        
+
         border.Child = self.data_grid
         return border
     
@@ -1071,8 +1311,7 @@ class AdvancedViewManagerWindow(Window):
         excel_btn.Width = 100
         excel_btn.Height = 35
         excel_btn.Margin = Thickness(0, 0, 10, 0)
-        green_color = Color.FromArgb(255, 76, 175, 80)
-        excel_btn.Background = SolidColorBrush(green_color)
+        excel_btn.Background = _brush("#4CAF50")
         excel_btn.Foreground = Brushes.White
         excel_btn.Click += self._on_excel
         
@@ -1082,11 +1321,21 @@ class AdvancedViewManagerWindow(Window):
         refresh_btn.Width = 100
         refresh_btn.Height = 35
         refresh_btn.Margin = Thickness(0, 0, 10, 0)
-        blue_color = Color.FromArgb(255, 33, 150, 243)  # Material Blue
-        refresh_btn.Background = SolidColorBrush(blue_color)
+        refresh_btn.Background = _brush("#2196F3")  # Material Blue
         refresh_btn.Foreground = Brushes.White
         refresh_btn.Click += self._on_refresh
         
+        edit_btn = Button()
+        edit_btn.Content = "Edit..."
+        edit_btn.Width = 100
+        edit_btn.Height = 35
+        edit_btn.Margin = Thickness(0, 0, 10, 0)
+        edit_btn.Background = _brush("#F0CC88")
+        edit_btn.BorderBrush = _brush("#D4B87A")
+        edit_btn.Foreground = _brush("#5D4E37")
+        edit_btn.FontWeight = System.Windows.FontWeights.SemiBold
+        edit_btn.Click += self._on_edit
+
         rename_btn = Button()
         rename_btn.Content = "Batch Rename"
         rename_btn.Width = 120
@@ -1106,8 +1355,7 @@ class AdvancedViewManagerWindow(Window):
         del_btn.Width = 100
         del_btn.Height = 35
         del_btn.Margin = Thickness(0, 0, 10, 0)
-        red_color = Color.FromArgb(255, 244, 67, 54)
-        del_btn.Background = SolidColorBrush(red_color)
+        del_btn.Background = _brush("#F44336")
         del_btn.Foreground = Brushes.White
         del_btn.Click += self._on_delete
         
@@ -1126,6 +1374,7 @@ class AdvancedViewManagerWindow(Window):
 
         stack.Children.Add(excel_btn)
         stack.Children.Add(refresh_btn)  # NEW!
+        stack.Children.Add(edit_btn)
         stack.Children.Add(rename_btn)
         stack.Children.Add(dup_btn)
         stack.Children.Add(del_btn)
@@ -1139,8 +1388,7 @@ class AdvancedViewManagerWindow(Window):
         """Create copyright footer - Sheet Manager exact style"""
         border = Border()
         # Dark gold, matching Sheet Manager
-        gold_dark = Color.FromArgb(255, 218, 165, 32)
-        border.Background = SolidColorBrush(gold_dark)
+        border.Background = _brush("#DAA520")
         border.Padding = Thickness(20, 10, 20, 10)
         
         text = TextBlock()
@@ -1156,21 +1404,18 @@ class AdvancedViewManagerWindow(Window):
     def _load_all_views(self):
         """Load views"""
         self.all_views = []
-        
+        vp_map = _build_viewport_map(self.doc)
+
         collector = FilteredElementCollector(self.doc)\
             .OfClass(View)\
             .WhereElementIsNotElementType()
-        
+
         for view in collector:
-            if view.ViewType in [ViewType.ProjectBrowser, ViewType.SystemBrowser,
-                                ViewType.Undefined, ViewType.Internal]:
+            if not _is_manageable_view(view):
                 continue
-            
-            if view.IsTemplate:
-                continue
-            
+
             try:
-                item = EnhancedViewItem(view, self.doc)
+                item = EnhancedViewItem(view, self.doc, vp_map)
                 self.all_views.append(item)
             except:
                 pass
@@ -1195,7 +1440,7 @@ class AdvancedViewManagerWindow(Window):
         """Apply filters"""
         self.filtered_views.Clear()
         
-        type_filter = str(self.type_combo.SelectedItem) if self.type_combo.SelectedItem else "All Sheets"
+        type_filter = str(self.type_combo.SelectedItem) if self.type_combo.SelectedItem else "All Types"
         template_filter = str(self.template_combo.SelectedItem) if self.template_combo.SelectedItem else "All Views"
         sheets_filter = str(self.sheets_combo.SelectedItem) if self.sheets_combo.SelectedItem else "All Views"
         search_text = self.search_box.Text.lower() if hasattr(self, 'search_box') and self.search_box.Text else ""
@@ -1205,8 +1450,8 @@ class AdvancedViewManagerWindow(Window):
             if search_text and search_text not in view.name.lower():
                 continue
             
-            # Type filter - fix: "All Sheets" should show all
-            if type_filter != "All Sheets" and view.view_type != type_filter:
+            # Type filter - "All Types" shows all
+            if type_filter != "All Types" and view.view_type != type_filter:
                 continue
             
             # Template filter
@@ -1274,159 +1519,139 @@ class AdvancedViewManagerWindow(Window):
         """Filter changed"""
         self._apply_filters()
     
-    def _on_cell_edit(self, sender, args):
-        """Handle cell edit"""
-        if args.EditAction == DataGridEditAction.Cancel:
+    def _on_edit(self, sender, args):
+        """Edit... button - edit the selected rows in EditViewsDialog."""
+        selected = list(self.data_grid.SelectedItems)
+        if not selected:
+            MessageBox.Show("Select views", "No Selection")
             return
-        
-        try:
-            item = args.Row.Item
-            column = args.Column
-            
-            if column.Header == "View Name":
-                new_name = args.EditingElement.Text
-                self._update_view_name(item, new_name)
-            
-            elif column.Header == "View Template":
-                new_template = args.EditingElement.SelectedItem
-                self._update_view_template(item, new_template)
-            
-            elif column.Header == "Scale":
-                new_scale = args.EditingElement.Text
-                self._update_scale(item, new_scale)
-            
-            elif column.Header == "Detail Level":
-                new_detail = args.EditingElement.SelectedItem
-                self._update_detail_level(item, new_detail)
-            
-            elif column.Header == "Title on Sheet":
-                new_title = args.EditingElement.Text
-                self._update_title_on_sheet(item, new_title)
-        
-        except Exception as e:
-            MessageBox.Show("Error: {0}".format(str(e)), "Error")
+        self._edit_items(selected)
     
-    def _update_view_name(self, item, new_name):
-        """Update view name"""
-        if not new_name or new_name.strip() == "":
-            MessageBox.Show("View name cannot be empty", "Invalid Name")
-            return
-        
-        t = Transaction(self.doc, "Rename View")
-        t.Start()
-        
-        try:
-            view = item.element
-            view.Name = new_name
-            item.name = new_name
-            t.Commit()
-        except Exception as e:
-            t.RollBack()
-            MessageBox.Show("Failed: {0}".format(str(e)), "Error")
-    
-    def _update_view_template(self, item, template_name):
-        """Update template"""
-        t = Transaction(self.doc, "Update Template")
-        t.Start()
-        
-        try:
-            view = item.element
-            
-            if template_name == "None":
-                view.ViewTemplateId = ElementId.InvalidElementId
-            else:
-                collector = FilteredElementCollector(self.doc)\
-                    .OfClass(View)\
-                    .WhereElementIsNotElementType()
-                
-                for template in collector:
-                    if template.IsTemplate and template.Name == template_name:
-                        view.ViewTemplateId = template.Id
-                        break
-            
-            item.view_template = template_name
-            t.Commit()
-        except Exception as e:
-            t.RollBack()
-            MessageBox.Show("Failed: {0}".format(str(e)), "Error")
-    
-    def _update_scale(self, item, scale_str):
-        """Update scale"""
-        t = Transaction(self.doc, "Update Scale")
-        t.Start()
-        
-        try:
-            view = item.element
-            
+    def _on_row_double_click(self, sender, args):
+        """Double-click a row - edit that one view. Ignores double-clicks on
+        the column headers, scrollbars and empty space."""
+        node = args.OriginalSource
+        while node is not None and not isinstance(node, DataGridRow):
+            if isinstance(node, System.Windows.Controls.Primitives.DataGridColumnHeader):
+                return
             try:
-                scale_value = int(scale_str)
-                if scale_value > 0:
-                    view.Scale = scale_value
-                    item.scale = scale_value
+                node = System.Windows.Media.VisualTreeHelper.GetParent(node)
             except:
-                MessageBox.Show("Scale must be positive integer", "Invalid")
-                t.RollBack()
                 return
-            
-            t.Commit()
-        except Exception as e:
-            t.RollBack()
-            MessageBox.Show("Failed: {0}".format(str(e)), "Error")
+        if node is None or node.Item is None:
+            return
+        self._edit_items([node.Item])
     
-    def _update_detail_level(self, item, detail_str):
-        """Update detail level"""
-        t = Transaction(self.doc, "Update Detail")
-        t.Start()
+    def _edit_items(self, items):
+        dialog = EditViewsDialog(items, self._get_all_templates())
+        dialog.Owner = self
+        if not dialog.ShowDialog() or not dialog.changes:
+            return
         
-        try:
-            view = item.element
-            
-            detail_map = {
-                "Coarse": ViewDetailLevel.Coarse,
-                "Medium": ViewDetailLevel.Medium,
-                "Fine": ViewDetailLevel.Fine
-            }
-            
-            if detail_str in detail_map:
-                view.DetailLevel = detail_map[detail_str]
-                item.detail_level = detail_str
-            
-            t.Commit()
-        except Exception as e:
-            t.RollBack()
-            MessageBox.Show("Failed: {0}".format(str(e)), "Error")
+        updated, failed = self._apply_view_edits(items, dialog.changes)
+        if updated is None:
+            return
+        
+        self.data_grid.Items.Refresh()
+        msg = "Updated {0} of {1} view(s).".format(updated, len(items))
+        if failed:
+            msg += "\n\nNot changed:\n" + "\n".join(failed[:8])
+            if len(failed) > 8:
+                msg += "\n... and {0} more".format(len(failed) - 8)
+        MessageBox.Show(msg, "Edit Views")
     
-    def _update_title_on_sheet(self, item, title_str):
-        """Update title on sheet"""
-        t = Transaction(self.doc, "Update Title")
-        t.Start()
+    def _apply_view_edits(self, items, changes):
+        """Apply EditViewsDialog's changes to every item in ONE transaction.
+        Returns (views updated with no error, failure lines), or (None, [])
+        when nothing was applied at all.
         
-        try:
-            view = item.element
-            
-            collector = FilteredElementCollector(self.doc)\
-                .OfClass(Viewport)\
-                .WhereElementIsNotElementType()
-            
-            updated = False
-            for vp in collector:
-                if vp.ViewId == view.Id:
-                    title_param = vp.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
-                    if title_param:
-                        title_param.Set(title_str)
-                        item.title_on_sheet = title_str
-                        updated = True
+        Views are re-fetched by id rather than trusting a cached Element.
+        Order is name, template, scale, detail level, title: a newly set
+        template can then refuse a scale/detail it now controls, which is
+        reported for that view instead of failing the rest."""
+        template_id = None
+        if 'template' in changes:
+            if changes['template'] == "None":
+                template_id = ElementId.InvalidElementId
+            else:
+                for v in FilteredElementCollector(self.doc).OfClass(View):
+                    if v.IsTemplate and v.Name == changes['template']:
+                        template_id = v.Id
                         break
-            
-            if not updated:
-                MessageBox.Show("View not on sheet", "Cannot Update")
-                t.RollBack()
-                return
+                if template_id is None:
+                    MessageBox.Show("View template '{0}' no longer exists.".format(
+                        changes['template']), "Edit Views")
+                    return None, []
+        
+        detail_map = {
+            "Coarse": ViewDetailLevel.Coarse,
+            "Medium": ViewDetailLevel.Medium,
+            "Fine": ViewDetailLevel.Fine
+        }
+        
+        updated = 0
+        failed = []
+        t = Transaction(self.doc, "DQT - Edit Views")
+        t.Start()
+        try:
+            for item in items:
+                view = self.doc.GetElement(item.id)
+                if view is None:
+                    failed.append("{0}: view no longer exists".format(item.name))
+                    continue
+                
+                errors = []
+                if 'name' in changes:
+                    try:
+                        view.Name = changes['name']
+                    except Exception as e:
+                        errors.append("name - {0}".format(e))
+                if template_id is not None:
+                    try:
+                        view.ViewTemplateId = template_id
+                    except Exception as e:
+                        errors.append("template - {0}".format(e))
+                if 'scale' in changes:
+                    try:
+                        view.Scale = changes['scale']
+                    except Exception as e:
+                        errors.append("scale - {0}".format(e))
+                if 'detail_level' in changes:
+                    try:
+                        view.DetailLevel = detail_map[changes['detail_level']]
+                    except Exception as e:
+                        errors.append("detail level - {0}".format(e))
+                if 'title' in changes:
+                    try:
+                        param = view.get_Parameter(BuiltInParameter.VIEW_DESCRIPTION)
+                        if param is None or param.IsReadOnly:
+                            errors.append("Title on Sheet - not available for this view")
+                        else:
+                            param.Set(changes['title'])
+                    except Exception as e:
+                        errors.append("Title on Sheet - {0}".format(e))
+                
+                if errors:
+                    failed.append("{0}: {1}".format(item.name, "; ".join(errors)))
+                else:
+                    updated += 1
             
             t.Commit()
         except Exception as e:
-            t.RollBack()
-            MessageBox.Show("Failed: {0}".format(str(e)), "Error")
+            if t.HasStarted() and not t.HasEnded():
+                t.RollBack()
+            MessageBox.Show("Error: {0}".format(str(e)), "Error")
+            return None, []
+        
+        for item in items:
+            try:
+                view = self.doc.GetElement(item.id)
+                if view is not None:
+                    item.refresh_editable(view)
+            except:
+                pass
+        
+        return updated, failed
     
     def _on_batch_rename(self, sender, args):
         """Batch rename"""
@@ -1451,7 +1676,7 @@ class AdvancedViewManagerWindow(Window):
             MessageBox.Show("Select views", "No Selection")
             return
         
-        t = Transaction(self.doc, "Duplicate")
+        t = Transaction(self.doc, "DQT - Duplicate Views")
         t.Start()
         
         try:
@@ -1489,7 +1714,7 @@ class AdvancedViewManagerWindow(Window):
         if result != System.Windows.MessageBoxResult.Yes:
             return
         
-        t = Transaction(self.doc, "Delete")
+        t = Transaction(self.doc, "DQT - Delete Views")
         t.Start()
         
         try:
@@ -2620,7 +2845,7 @@ class AdvancedViewManagerWindow(Window):
     
     def _apply_excel_updates(self, updates):
         """Apply updates from Excel import"""
-        t = Transaction(self.doc, "Import from Excel")
+        t = Transaction(self.doc, "DQT - Import Views from Excel")
         t.Start()
         
         try:
@@ -2828,15 +3053,22 @@ class AdvancedViewManagerWindow(Window):
             "Manage project views in one grid, with batch tools alongside "
             "the ordinary create/rename/delete actions.\n\n"
             "- Search filters by name; Filter narrows by view type (All "
-            "Sheets, Floor Plan, Ceiling Plan, Section, Elevation, 3D View).\n"
-            "- Select All / Clear All manage the checked rows.\n"
+            "Types, Floor Plan, Ceiling Plan, Section, Elevation, 3D View).\n"
+            "- Select All / Clear All manage the selected rows.\n"
             "- More Filters: Has Template (All/With/Without) and On Sheets "
             "(All/On Sheets/Not On Sheets).\n"
+            "- The grid is read-only. Edit... (or double-click a row) "
+            "changes View Name (one view), View Template, Scale, Detail "
+            "Level and Title on Sheet - only ticked fields are applied, to "
+            "every selected view, in one step you can Undo.\n"
+            "- Title on Sheet is the view's own Title on Sheet parameter.\n"
+            "- Reports, panel schedules, renderings, walkthroughs and the "
+            "revision schedules inside titleblocks are not listed.\n"
             "- Excel exports the current view list; Refresh re-scans the "
             "model.\n"
             "- Batch Rename opens a find/replace-style rename dialog for "
-            "the checked views.\n"
-            "- Duplicate and Delete act on the checked views; Close exits.",
+            "the selected views.\n"
+            "- Duplicate and Delete act on the selected views; Close exits.",
             "Advanced View Manager - DQT", MessageBoxButton.OK, MessageBoxImage.Information)
     
     def _on_header_right_click(self, sender, args):
@@ -2941,8 +3173,7 @@ class AdvancedViewManagerWindow(Window):
             instruction = TextBlock()
             instruction.Text = "Choose a view parameter from the list below:"
             instruction.FontSize = 11
-            gray_color = Color.FromArgb(255, 100, 100, 100)
-            instruction.Foreground = SolidColorBrush(gray_color)
+            instruction.Foreground = _brush("#646464")
             title_panel.Children.Add(instruction)
             
             main_grid.Children.Add(title_panel)
@@ -2972,8 +3203,7 @@ class AdvancedViewManagerWindow(Window):
             from System.Windows.Controls import ScrollViewer, ListBox, ListBoxItem
             scroll = ScrollViewer()
             scroll.VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto
-            gray_border = Color.FromArgb(255, 200, 200, 200)
-            scroll.BorderBrush = SolidColorBrush(gray_border)
+            scroll.BorderBrush = _brush("#C8C8C8")
             scroll.BorderThickness = Thickness(1)
             Grid.SetRow(scroll, 1)
             
@@ -3019,8 +3249,7 @@ class AdvancedViewManagerWindow(Window):
             info_text = TextBlock()
             info_text.Text = "{} parameters available".format(len(params))
             info_text.FontSize = 10
-            gray_info = Color.FromArgb(255, 120, 120, 120)
-            info_text.Foreground = SolidColorBrush(gray_info)
+            info_text.Foreground = _brush("#787878")
             info_text.HorizontalAlignment = System.Windows.HorizontalAlignment.Left
             info_text.Margin = Thickness(0, 0, 0, 10)
             Grid.SetRow(info_text, 2)
@@ -3052,8 +3281,7 @@ class AdvancedViewManagerWindow(Window):
             ok_btn.Width = 100
             ok_btn.Height = 32
             ok_btn.Margin = Thickness(5, 0, 5, 0)
-            green_color = Color.FromArgb(255, 76, 175, 80)
-            ok_btn.Background = SolidColorBrush(green_color)
+            ok_btn.Background = _brush("#4CAF50")
             ok_btn.Foreground = Brushes.White
             ok_btn.FontWeight = System.Windows.FontWeights.SemiBold
             ok_btn.Click += on_ok
