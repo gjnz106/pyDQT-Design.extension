@@ -2,7 +2,7 @@
 
 **pyRevit extension for Autodesk Revit — BIM Designer tools.**
 
-> 61 tools · 7 panels · Revit 2024 – 2027
+> 62 tools · 7 panels · Revit 2024 – 2027
 
 pyDQT-Design adds a single **pyDQT-Design** tab to the Revit ribbon, organised into
 panels that follow the modelling workflow from interface setup and element selection,
@@ -93,6 +93,7 @@ to the same location, and press the pyRevit **Reload** button.
 - **AutoJoin** — Auto-join elements with rule-based category pairs (save/load settings).
 - **CAD to Floor** — Create Floors or Parts (DirectShape) from linked/imported DWG geometry.
 - **CAD to Wall** — Detect parallel CAD line pairs, compute centerlines, auto-create matching wall types.
+- **Floor to Generic Model** — Create a Generic Model (DirectShape) with exactly the shape of each selected floor.
 - **Gridline** (drop-down): Align Gridline · Convert Gridline (swap 3D ↔ 2D extents).
 - **Level** (drop-down): Align Level · Convert Level (swap 3D ↔ 2D extents, bubble control) · Level Impact (elevation-change compensation) · Rehost Level.
 - **Revise Base** — Auto-adjust Base Offset when changing Base Constraint to keep position.
