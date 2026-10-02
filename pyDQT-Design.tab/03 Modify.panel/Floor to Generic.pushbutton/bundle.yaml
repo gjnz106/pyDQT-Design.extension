@@ -1,2 +1,2 @@
 title: "Floor to\nGeneric"
-tooltip: "Create a Generic Model with exactly the shape of each selected floor - sloped, shape-edited, with openings and cut by joined walls. The copy sits on top of the floor and is selected, ready to move, schedule or hide the original. Select the floors first, or pick them when asked."
+tooltip: "Create a Generic Model family with exactly the shape of each selected floor - sloped, shape-edited, with openings and cut by joined walls. Unlike a floor, the copy can be joined or cut with a toposolid. It sits on the floor and is selected. Select the floors first, or pick them when asked."
