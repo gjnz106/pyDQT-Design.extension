@@ -1,22 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Floor to Generic Model v1.0 - DQT
-Creates a Generic Model with exactly the shape of each selected floor.
+Floor to Generic Model v2.0 - DQT
+Creates a Generic Model family instance with exactly the shape of each
+selected floor.
 
-The copy is made from the floor's own solid geometry - the finished slab as
-Revit shows it - so a sloped or shape-edited floor, a floor with openings
-(shafts, cut-outs) and a floor trimmed by joined walls all come out the same.
-The Generic Model is a DirectShape in the Generic Models category: it can be
-scheduled, filtered, hidden, moved or exported, and it does not change when the
-floor does.
+Why a family and not a DirectShape: a floor cannot be joined or cut with a
+toposolid, and neither can a DirectShape. A family instance can, so each floor
+is turned into a small Generic Model family and placed back where the floor is.
+(Revit's API cannot create a Model In-Place itself - that editor is user
+interface only - so this is the closest thing it can make: a Generic Model
+family instance, built from the floor.)
 
-Each floor type gets its own Generic Model type ("Floor Copy - <floor type>"),
-so the copies can be told apart and scheduled by the type they came from.
+The shape is taken from the floor's own solid geometry - the finished slab as
+Revit shows it - so a sloped or shape-edited floor, a floor with openings and a
+floor trimmed by joined walls all come out the same. In the family it is a
+solid Freeform form.
+
+Each floor gets a family of its own named "Floor Copy - <floor type> (floor
+<id>)". The family keeps its origin near the floor, not at the project origin,
+so a model far from the origin does not end up with distant geometry.
 
 Workflow:
   1. Select one or more floors (or run with none selected and pick them).
-  2. Run - a Generic Model is created exactly on top of each floor and the new
-     ones are selected, ready to move.
+  2. Run - a family is built for each floor, loaded into the project and placed
+     exactly on top of it. The new instances are selected.
 
 Copyright (c) 2026 Dang Quoc Truong (DQT)
 All rights reserved.
@@ -24,19 +31,24 @@ All rights reserved.
 
 __title__ = "Floor to\nGeneric"
 __author__ = "Dang Quoc Truong (DQT)"
-__doc__ = ("Create a Generic Model with exactly the shape of each selected "
-           "floor.")
+__doc__ = ("Create a Generic Model family instance with exactly the shape of "
+           "each selected floor - one that can be joined or cut with a "
+           "toposolid.")
 
 # ==============================================================================
 # IMPORTS
 # ==============================================================================
+import os
+import re
+import tempfile
 import clr
 
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 
 import Autodesk.Revit.DB as DB
-from Autodesk.Revit.DB import Transaction, SubTransaction
+from Autodesk.Revit.DB import Transaction, TransactionGroup
+from Autodesk.Revit.DB.Structure import StructuralType
 from Autodesk.Revit.UI import (
     TaskDialog, TaskDialogCommonButtons, TaskDialogCommandLinkId,
     TaskDialogResult
@@ -46,22 +58,36 @@ from System.Collections.Generic import List
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
+app = __revit__.Application
 
 # ==============================================================================
 # CONSTANTS
 # ==============================================================================
 TITLE = "Floor to Generic Model"
-APP_ID = "DQT.FloorToGenericModel"       # marks the copies this tool made
-TYPE_PREFIX = "Floor Copy - "
+FAMILY_PREFIX = "Floor Copy - "
+# "...(floor 123)" or "...(floor 123) v2" - how a copy is traced back to its floor
+FAMILY_NAME_RE = re.compile(r"\(floor (\d+)\)(?: v\d+)?$")
+TEMP_FOLDER = "DQT_FloorToGeneric"
 MIN_VOLUME_FT3 = 1e-9                    # ignore empty / degenerate solids
-BAD_NAME_CHARS = "\\:{}[]|;<>?`~"        # characters Revit refuses in a type name
-MAX_TYPE_NAME = 80
+# Characters a family name cannot have: Revit's own list plus the ones a file
+# name cannot have (the family is saved to a file under its name to be loaded).
+BAD_NAME_CHARS = "\\/:*?\"<>|{}[];`~"
+MAX_NAME_PART = 80
 FOOTER = "Dang Quoc Truong - DQT (c) 2026"
 MAX_LISTED = 10
+# Generic Model templates that are NOT the plain, free-standing one.
+HOSTED_WORDS = ("face based", "wall based", "ceiling based", "floor based",
+                "roof based", "line based", "pattern based", "adaptive",
+                "work plane")
 
 
 class CopyError(Exception):
     """A floor that cannot be copied, with the reason to show the user."""
+    pass
+
+
+class TemplateError(Exception):
+    """The family template cannot be used - nothing can be copied."""
     pass
 
 
@@ -103,19 +129,67 @@ def floor_label(document, floor):
                                  eid_int(floor.Id))
 
 
-def clean_type_name(name):
-    """A floor type name made safe to reuse as a Generic Model type name."""
+def clean_name_part(name):
+    """A floor type name made safe to use inside a family name / file name."""
     text = name or ""
     for ch in BAD_NAME_CHARS:
         text = text.replace(ch, "-")
-    text = text.strip()
+    text = text.strip().rstrip(".").strip()
     if not text:
         return "Unnamed"
-    return text[:MAX_TYPE_NAME].strip()
+    return text[:MAX_NAME_PART].strip()
 
 
-def copy_type_name(document, floor):
-    return TYPE_PREFIX + clean_type_name(floor_type_name(document, floor))
+def base_family_name(document, floor):
+    return "{0}{1} (floor {2})".format(
+        FAMILY_PREFIX, clean_name_part(floor_type_name(document, floor)),
+        eid_int(floor.Id))
+
+
+def unique_family_name(base, taken):
+    """base, or "base v2", "base v3"... - whichever is not in taken (lower-case
+    names). The name returned is added to taken."""
+    name = base
+    number = 1
+    while name.lower() in taken:
+        number += 1
+        name = "{0} v{1}".format(base, number)
+    taken.add(name.lower())
+    return name
+
+
+def temp_folder():
+    folder = os.path.join(tempfile.gettempdir(), TEMP_FOLDER)
+    if not os.path.isdir(folder):
+        os.makedirs(folder)
+    return folder
+
+
+def delete_file(path):
+    try:
+        if path and os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def remove_temp_folder_if_empty():
+    try:
+        folder = os.path.join(tempfile.gettempdir(), TEMP_FOLDER)
+        if os.path.isdir(folder) and not os.listdir(folder):
+            os.rmdir(folder)
+    except Exception:
+        pass
+
+
+def roll_back_quietly(transaction):
+    """Roll back a transaction that may already have ended (a Commit that
+    failed ends it), without letting that hide the original error."""
+    try:
+        if transaction.HasStarted() and not transaction.HasEnded():
+            transaction.RollBack()
+    except Exception:
+        pass
 
 
 # ==============================================================================
@@ -157,149 +231,206 @@ def collect_solids(geometry, depth=0):
     return found
 
 
-def valid_for_direct_shape(direct_shape, geometry_object):
-    """Whether Revit accepts this geometry in a DirectShape. If the check
-    itself is unavailable, accept it and let SetShape be the judge."""
+def copy_origin(floor):
+    """The point the copy's family is built around, and where it is placed: the
+    middle of the floor's footprint at its lowest level. Keeping the family's
+    origin at the floor, instead of the project origin, keeps its geometry
+    small even when the model is far from the origin."""
+    box = floor.get_BoundingBox(None)
+    if box is None:
+        raise CopyError("the floor has no bounding box")
+    return DB.XYZ((box.Min.X + box.Max.X) / 2.0,
+                  (box.Min.Y + box.Max.Y) / 2.0,
+                  box.Min.Z)
+
+
+# ==============================================================================
+# FAMILY TEMPLATE
+# ==============================================================================
+def template_search_roots(application):
+    """Folders to look for the template in: the one set in Options > File
+    Locations, then the standard install location for this Revit version."""
+    roots = []
     try:
-        return bool(direct_shape.IsValidGeometry(geometry_object))
+        configured = application.FamilyTemplatePath
+        if configured:
+            roots.append(configured)
     except Exception:
-        return True
+        pass
+    try:
+        program_data = os.environ.get("ProgramData")
+        version = application.VersionNumber
+        if program_data and version:
+            roots.append(os.path.join(program_data, "Autodesk",
+                                      "RVT " + version, "Family Templates"))
+    except Exception:
+        pass
+    return roots
+
+
+def template_rank(file_name):
+    """How good a match this file is for the plain Generic Model template: 0
+    best, None not a candidate (not a Generic Model template, or a hosted /
+    adaptive / line-based kind)."""
+    base = os.path.splitext(file_name)[0].lower()
+    if "generic model" not in base:
+        return None
+    for word in HOSTED_WORDS:
+        if word in base:
+            return None
+    if base == "metric generic model":
+        return 0
+    if base == "generic model":
+        return 1
+    return 2
+
+
+def find_generic_model_template(application, max_depth=3):
+    """Path of the Generic Model family template, or None."""
+    searched = set()
+    for root in template_search_roots(application):
+        key = os.path.normcase(os.path.normpath(root))
+        if key in searched or not os.path.isdir(root):
+            continue
+        searched.add(key)
+        best = None
+        base_depth = root.rstrip("\\/").count(os.sep)
+        for folder, subfolders, files in os.walk(root):
+            if folder.count(os.sep) - base_depth >= max_depth:
+                del subfolders[:]
+            for file_name in files:
+                if not file_name.lower().endswith(".rft"):
+                    continue
+                rank = template_rank(file_name)
+                if rank is None:
+                    continue
+                order = (rank, len(folder), folder.lower(), file_name.lower())
+                if best is None or order < best[0]:
+                    best = (order, os.path.join(folder, file_name))
+        if best is not None:
+            return best[1]
+    return None
+
+
+def ask_for_template():
+    """Let the user browse for the template when it cannot be found (a
+    localized install names it differently). None if they cancel."""
+    try:
+        clr.AddReference('System.Windows.Forms')
+        from System.Windows.Forms import OpenFileDialog, DialogResult
+        dialog = OpenFileDialog()
+        dialog.Title = ("Pick the Generic Model family template "
+                        "(Metric Generic Model.rft)")
+        dialog.Filter = "Family templates (*.rft)|*.rft"
+        if dialog.ShowDialog() == DialogResult.OK:
+            return dialog.FileName
+    except Exception:
+        pass
+    return None
 
 
 # ==============================================================================
 # COPIES MADE EARLIER
 # ==============================================================================
 def find_existing_copies(document):
-    """{floor id (int): [copy ElementId, ...]} for the Generic Models this tool
-    made before, found through the application id stored on each."""
+    """{floor id (int): [instance ElementId, ...]} for the Generic Models this
+    tool made before, found through the floor id in each family's name. Only
+    placed instances count - a family left behind after its instance was
+    deleted does not."""
     copies = {}
+    by_symbol = {}
     try:
-        for direct_shape in DB.FilteredElementCollector(document).OfClass(DB.DirectShape):
+        collector = DB.FilteredElementCollector(document) \
+            .OfClass(DB.FamilyInstance) \
+            .OfCategory(DB.BuiltInCategory.OST_GenericModel)
+        for instance in collector:
             try:
-                if direct_shape.ApplicationId != APP_ID:
-                    continue
-                key = int(direct_shape.ApplicationDataId)
+                symbol_key = eid_int(instance.GetTypeId())
+                if symbol_key not in by_symbol:
+                    name = instance.Symbol.Family.Name
+                    match = FAMILY_NAME_RE.search(name)
+                    by_symbol[symbol_key] = (
+                        int(match.group(1))
+                        if match and name.startswith(FAMILY_PREFIX) else None)
+                floor_key = by_symbol[symbol_key]
+                if floor_key is not None:
+                    copies.setdefault(floor_key, []).append(instance.Id)
             except Exception:
                 continue
-            copies.setdefault(key, []).append(direct_shape.Id)
     except Exception:
         pass
     return copies
 
 
-# ==============================================================================
-# CREATION
-# ==============================================================================
-def existing_copy_types(document, category_id):
-    """{type name: ElementId} of the Generic Model DirectShape types that
-    already exist."""
-    found = {}
+def existing_family_names(document):
+    """Lower-case names of every family already in the project."""
+    names = set()
     try:
-        for shape_type in DB.FilteredElementCollector(document).OfClass(DB.DirectShapeType):
+        for family in DB.FilteredElementCollector(document).OfClass(DB.Family):
             try:
-                category = shape_type.Category
-                if category is None or eid_int(category.Id) != eid_int(category_id):
-                    continue
-                found[shape_type.Name] = shape_type.Id
+                names.add(family.Name.lower())
             except Exception:
                 continue
     except Exception:
         pass
-    return found
+    return names
 
 
-def get_or_create_type(document, name, category_id, known):
-    """The Generic Model type for this name, created when missing. None if
-    Revit refuses - the copy is then made without a type of its own."""
-    if name in known:
-        return known[name]
+# ==============================================================================
+# BUILD THE FAMILY (in a family document of its own)
+# ==============================================================================
+def build_family_file(application, template_path, solids, origin, family_name):
+    """Make a family from the template, put the floor's solids in it as solid
+    Freeform forms (moved so the family origin is at `origin`), save it as
+    <family_name>.rfa in the temp folder and return that path. The family
+    document is always closed again. Raises TemplateError for a template that
+    is not a Generic Model one, CopyError when the geometry is refused."""
+    family_doc = application.NewFamilyDocument(template_path)
+    if family_doc is None:
+        raise TemplateError("Revit could not open the family template "
+                            "{0}".format(template_path))
     try:
-        shape_type = DB.DirectShapeType.Create(document, name, category_id)
-        known[name] = shape_type.Id
-        return shape_type.Id
-    except Exception:
-        known[name] = None
-        return None
+        category = family_doc.OwnerFamily.FamilyCategory
+        if (category is None or
+                eid_int(category.Id) != int(DB.BuiltInCategory.OST_GenericModel)):
+            raise TemplateError(
+                "{0} is not a Generic Model family template.".format(template_path))
 
-
-def write_notes(direct_shape, document, floor):
-    """Comments says where the copy came from; Mark is carried over."""
-    try:
-        comments = direct_shape.get_Parameter(
-            DB.BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-        if comments is not None and not comments.IsReadOnly:
-            comments.Set("Copy of floor {0}".format(floor_label(document, floor)))
-    except Exception:
-        pass
-    try:
-        source = floor.get_Parameter(DB.BuiltInParameter.ALL_MODEL_MARK)
-        target = direct_shape.get_Parameter(DB.BuiltInParameter.ALL_MODEL_MARK)
-        if (source is not None and target is not None and source.HasValue
-                and source.AsString() and not target.IsReadOnly):
-            target.Set(source.AsString())
-    except Exception:
-        pass
-
-
-def copy_floor_to_generic(document, floor, category_id, type_id):
-    """Create the Generic Model for one floor and return its ElementId. Raises
-    CopyError (or a Revit exception) when it cannot - the caller rolls the
-    attempt back."""
-    solids = collect_solids(floor.get_Geometry(geometry_options()))
-    if not solids:
-        raise CopyError("the floor has no solid geometry to copy")
-
-    direct_shape = DB.DirectShape.CreateElement(document, category_id)
-    direct_shape.ApplicationId = APP_ID
-    direct_shape.ApplicationDataId = str(eid_int(floor.Id))
-    if type_id is not None:
+        transaction = Transaction(family_doc, "DQT - Floor form")
+        transaction.Start()
         try:
-            direct_shape.SetTypeId(type_id)
+            shift = DB.Transform.CreateTranslation(origin.Negate())
+            for solid in solids:
+                DB.FreeFormElement.Create(
+                    family_doc, DB.SolidUtils.CreateTransformed(solid, shift))
+            if transaction.Commit() != DB.TransactionStatus.Committed:
+                raise CopyError("Revit rejected the floor's geometry in the family")
+        except Exception:
+            roll_back_quietly(transaction)
+            raise
+
+        path = os.path.join(temp_folder(), family_name + ".rfa")
+        options = DB.SaveAsOptions()
+        options.OverwriteExistingFile = True
+        family_doc.SaveAs(path, options)
+        return path
+    finally:
+        try:
+            family_doc.Close(False)
         except Exception:
             pass
 
-    shape = List[DB.GeometryObject]()
-    for solid in solids:
-        clone = DB.SolidUtils.Clone(solid)
-        if valid_for_direct_shape(direct_shape, clone):
-            shape.Add(clone)
-    if shape.Count == 0:
-        raise CopyError("Revit cannot use this floor's geometry in a Generic Model")
 
-    direct_shape.SetShape(shape)
-    write_notes(direct_shape, document, floor)
-    return direct_shape.Id
-
-
-def create_copies(document, floor_ids):
-    """Copy each floor to a Generic Model in ONE transaction (one Undo). Each
-    floor is attempted on its own sub-transaction, so one that fails leaves
-    nothing behind and the others still go. Returns (created, failures):
-    created is [(floor id int, new ElementId)], failures [text]. Floors are
-    looked up again by id for each copy rather than held across the
-    modifications."""
-    created = []
+def prepare_families(document, application, template_path, floor_ids):
+    """Phase 1, with no transaction open on the project: build one family file
+    per floor. Returns (ready, failures); ready is [(floor id, family name,
+    path, origin)]. Floors are looked up again by id for each one. A bad
+    template stops everything (TemplateError, after removing the files made so
+    far)."""
+    ready = []
     failures = []
-    category_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
-
-    transaction = Transaction(document, "DQT - Floor to Generic Model")
-    transaction.Start()
+    taken = existing_family_names(document)
     try:
-        known_types = existing_copy_types(document, category_id)
-
-        # Types first and outside the per-floor sub-transactions: one that
-        # was rolled back with a failed floor would leave the next floor of
-        # the same type pointing at a type that no longer exists.
-        type_for_name = {}
-        for floor_id in floor_ids:
-            floor = document.GetElement(floor_id)
-            if floor is None:
-                continue
-            name = copy_type_name(document, floor)
-            if name not in type_for_name:
-                type_for_name[name] = get_or_create_type(
-                    document, name, category_id, known_types)
-
         for floor_id in floor_ids:
             floor = document.GetElement(floor_id)
             if floor is None:
@@ -307,26 +438,157 @@ def create_copies(document, floor_ids):
                     eid_int(floor_id)))
                 continue
             label = floor_label(document, floor)
-            type_id = type_for_name.get(copy_type_name(document, floor))
-
-            attempt = SubTransaction(document)
-            attempt.Start()
             try:
-                new_id = copy_floor_to_generic(document, floor, category_id, type_id)
-                attempt.Commit()
+                solids = collect_solids(floor.get_Geometry(geometry_options()))
+                if not solids:
+                    raise CopyError("the floor has no solid geometry to copy")
+                origin = copy_origin(floor)
+                name = unique_family_name(base_family_name(document, floor), taken)
+                path = build_family_file(application, template_path, solids,
+                                         origin, name)
+                ready.append((floor_id, name, path, origin))
+            except TemplateError:
+                raise
+            except Exception as error:
+                failures.append("{0}: {1}".format(label, error))
+    except Exception:
+        for _, _, path, _ in ready:
+            delete_file(path)
+        raise
+    return ready, failures
+
+
+# ==============================================================================
+# LOAD AND PLACE (in the project)
+# ==============================================================================
+def find_family(document, family_name):
+    for family in DB.FilteredElementCollector(document).OfClass(DB.Family):
+        try:
+            if family.Name == family_name:
+                return family
+        except Exception:
+            continue
+    return None
+
+
+def floor_level(document, floor):
+    try:
+        level = document.GetElement(floor.LevelId)
+        return level if isinstance(level, DB.Level) else None
+    except Exception:
+        return None
+
+
+def place_instance(document, symbol, origin, level):
+    """Place the family at `origin` on `level` (the floor's own level, so the
+    instance reports the same Level as the floor)."""
+    try:
+        if level is not None:
+            return document.Create.NewFamilyInstance(
+                origin, symbol, level, StructuralType.NonStructural)
+        return document.Create.NewFamilyInstance(
+            origin, symbol, StructuralType.NonStructural)
+    except AttributeError:
+        # Revit versions that removed Document.Create.NewFamilyInstance
+        return DB.FamilyInstance.Create(
+            document, symbol.Id, origin, level, StructuralType.NonStructural)
+
+
+def write_notes(instance, document, floor):
+    """Comments says where the copy came from; Mark is carried over."""
+    try:
+        comments = instance.get_Parameter(
+            DB.BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
+        if comments is not None and not comments.IsReadOnly:
+            comments.Set("Copy of floor {0}".format(floor_label(document, floor)))
+    except Exception:
+        pass
+    try:
+        source = floor.get_Parameter(DB.BuiltInParameter.ALL_MODEL_MARK)
+        target = instance.get_Parameter(DB.BuiltInParameter.ALL_MODEL_MARK)
+        if (source is not None and target is not None and source.HasValue
+                and source.AsString() and not target.IsReadOnly):
+            target.Set(source.AsString())
+    except Exception:
+        pass
+
+
+def load_and_place(document, floor, family_name, path, origin):
+    """Load the family file and place one instance of it on the floor. Runs
+    inside the caller's transaction. Returns the new instance's ElementId."""
+    result = document.LoadFamily(path)
+    loaded = result[0] if isinstance(result, tuple) else result
+    if not loaded:
+        raise CopyError("Revit could not load the family")
+    family = find_family(document, family_name)
+    if family is None:
+        raise CopyError("the loaded family could not be found")
+    symbol_ids = list(family.GetFamilySymbolIds())
+    if not symbol_ids:
+        raise CopyError("the loaded family has no type to place")
+    symbol = document.GetElement(symbol_ids[0])
+    if not symbol.IsActive:
+        symbol.Activate()
+    instance = place_instance(document, symbol, origin, floor_level(document, floor))
+    write_notes(instance, document, floor)
+    return instance.Id
+
+
+def place_families(document, ready):
+    """Phase 2: load each family and place its instance. ONE Undo step for the
+    lot (a transaction group), each floor in its own transaction so one that
+    fails leaves nothing behind - not even its loaded family - and the others
+    still go. Returns (created, failures); created is [(floor id int, new
+    ElementId)]."""
+    created = []
+    failures = []
+    group = TransactionGroup(document, "DQT - Floor to Generic Model")
+    group.Start()
+    try:
+        for floor_id, family_name, path, origin in ready:
+            floor = document.GetElement(floor_id)
+            if floor is None:
+                failures.append("id {0}: the floor no longer exists".format(
+                    eid_int(floor_id)))
+                continue
+            label = floor_label(document, floor)
+            transaction = Transaction(document, "DQT - Floor to Generic Model")
+            transaction.Start()
+            try:
+                new_id = load_and_place(document, floor, family_name, path, origin)
+                if transaction.Commit() != DB.TransactionStatus.Committed:
+                    raise CopyError("Revit rolled the change back")
                 created.append((eid_int(floor_id), new_id))
             except Exception as error:
-                attempt.RollBack()
+                roll_back_quietly(transaction)
                 failures.append("{0}: {1}".format(label, error))
-
         if created:
-            transaction.Commit()
+            group.Assimilate()
         else:
-            transaction.RollBack()
+            group.RollBack()
     except Exception:
-        if transaction.HasStarted() and not transaction.HasEnded():
-            transaction.RollBack()
+        if group.HasStarted() and not group.HasEnded():
+            group.RollBack()
         raise
+    return created, failures
+
+
+def create_copies(document, application, template_path, floor_ids):
+    """Copy each floor to a Generic Model family instance. Returns (created,
+    failures). The temporary family files are always removed."""
+    ready = []
+    created = []
+    failures = []
+    try:
+        ready, failures = prepare_families(document, application,
+                                           template_path, floor_ids)
+        if ready:
+            created, placing_failures = place_families(document, ready)
+            failures = failures + placing_failures
+    finally:
+        for _, _, path, _ in ready:
+            delete_file(path)
+        remove_temp_folder_if_empty()
     return created, failures
 
 
@@ -408,8 +670,10 @@ def summary_text(created, failures, skipped):
     """(instruction, content) for the result dialog."""
     if created:
         instruction = "Created {0} Generic Model(s).".format(len(created))
-        content = ("Each sits exactly on top of its floor and is selected now "
-                   "- move it, or hide the original floor to see it.")
+        content = ("Each is a Generic Model family instance sitting exactly on "
+                   "its floor, and is selected now - move it, or hide the "
+                   "original floor to see it. The families are named "
+                   "\"{0}<floor type> (floor <id>)\".".format(FAMILY_PREFIX))
     else:
         instruction = "No Generic Model was created."
         content = ""
@@ -456,8 +720,20 @@ def run():
                      "Every selected floor already has a Generic Model copy.")
                 return
 
+    template_path = find_generic_model_template(app) or ask_for_template()
+    if not template_path:
+        show("No Generic Model family template was found.",
+             "The tool builds a small Generic Model family for each floor, and "
+             "needs Revit's \"Metric Generic Model.rft\" template for that. Set "
+             "its folder in Options > File Locations > Default path for family "
+             "templates, then run the tool again.")
+        return
+
     try:
-        created, failures = create_copies(doc, floor_ids)
+        created, failures = create_copies(doc, app, template_path, floor_ids)
+    except TemplateError as error:
+        show("The family template cannot be used.", str(error))
+        return
     except Exception as error:
         show("The Generic Models could not be created.",
              "Nothing was changed.\n\n{0}".format(error))

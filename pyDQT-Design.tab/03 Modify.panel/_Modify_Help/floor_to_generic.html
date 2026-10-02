@@ -22,8 +22,13 @@
   <div class="card">
     <h2>What it does</h2>
     <p class="lede">
-      Creates a Generic Model with exactly the shape of each selected floor.
-      The copy is taken from the floor's finished solid geometry, so a sloped
+      Turns each selected floor into a Generic Model family placed exactly
+      where the floor is, with exactly the floor's shape. A floor cannot be
+      joined or cut with a toposolid; a family instance can - so this gives you
+      a copy of the floor you can join to, or cut, the toposolid.
+    </p>
+    <p>
+      The shape is taken from the floor's finished solid geometry, so a sloped
       or shape-edited floor, a floor with openings and a floor trimmed by
       joined walls all come out the same - not a rebuilt outline.
     </p>
@@ -34,18 +39,22 @@
     <ol class="steps">
       <li>Select one or more floors - or run the tool with nothing selected
         and pick them, then click <b>Finish</b>.</li>
-      <li>Click <b>Floor to Generic</b>. One Generic Model is created for each
-        floor, exactly on top of it, in a single step you can Undo.</li>
-      <li>The new Generic Models are selected, so you can move them away,
-        or hide the original floor to see them.</li>
+      <li>Click <b>Floor to Generic</b>. A small family is built for each
+        floor, loaded into the project and placed exactly on top of the floor,
+        all in one step you can Undo. It takes a moment per floor.</li>
+      <li>The new Generic Models are selected, so you can move them away, or
+        hide the original floor to see them.</li>
+      <li>Join or cut the toposolid with the new Generic Model as you would
+        with any other family instance.</li>
     </ol>
   </div>
 
   <div class="card">
     <h2>What you get</h2>
     <dl class="kv">
-      <dt class="v-dark">Category</dt><dd>Generic Models (a DirectShape, not a loadable family)</dd>
-      <dt class="v-dark">Type</dt><dd>one per floor type, named <span class="code">Floor Copy - &lt;floor type&gt;</span>, so copies can be scheduled and filtered by the floor type they came from</dd>
+      <dt class="v-dark">Element</dt><dd>a Generic Models family instance, with the floor's shape as a solid form</dd>
+      <dt class="v-dark">Family</dt><dd>one per floor, named <span class="code">Floor Copy - &lt;floor type&gt; (floor &lt;id&gt;)</span> - see Project Browser &rsaquo; Families &rsaquo; Generic Models</dd>
+      <dt class="v-dark">Level</dt><dd>the floor's own level</dd>
       <dt class="v-dark">Comments</dt><dd>says which floor it was copied from (type and id)</dd>
       <dt class="v-dark">Mark</dt><dd>carried over from the floor when it has one</dd>
     </dl>
@@ -53,21 +62,36 @@
 
   <div class="card">
     <h2>Good to know</h2>
-    <div class="box tip">
-      The copy is a snapshot. It does not follow the floor if the floor is
-      edited later - copy it again (the tool asks what to do about floors
-      that already have a copy) and delete the old one.
+    <div class="box warn">
+      <b>This is a family, not a Model In-Place.</b> Revit's API cannot create
+      a Model In-Place - that editor is user interface only - so the tool builds
+      a Generic Model family instead. It behaves like a Model In-Place for
+      joining and cutting, but it is not "in place": tools that look for
+      in-place families (Select In-Place Elements, In-Place Volume) will not see
+      these copies.
     </div>
     <div class="box tip">
-      Floors that already have a copy made by this tool are noticed. You
-      choose to <b>skip</b> them or <b>copy them again</b>, so you do not end up
-      with two copies stacked on the same floor by accident.
+      The tool needs Revit's <span class="code">Metric Generic Model.rft</span>
+      family template to build each family. It finds it by itself under the
+      family-template folder set in Options &rsaquo; File Locations (or the
+      standard install folder); if it cannot, it asks you to browse to it.
+    </div>
+    <div class="box tip">
+      The copy is a snapshot. It does not follow the floor if the floor is
+      edited later - copy it again (the tool asks what to do about floors that
+      already have a copy: skip them, or copy them again) and delete the old
+      one. A repeated copy is named with a <span class="code">v2</span>,
+      <span class="code">v3</span>... suffix.
+    </div>
+    <div class="box tip">
+      Material is not copied: the new form uses the Generic Models default
+      (<b>By Category</b>). Change it in the family or with Paint if you need it.
     </div>
     <div class="box warn">
       Works on floors in the active model. Floors inside a linked model, and
       toposolids, are not copied. A floor Revit gives no solid for, or whose
-      geometry a Generic Model cannot hold, is listed as not copied and the
-      other floors still go.
+      geometry a family form cannot hold, is listed as not copied and the other
+      floors still go.
     </div>
   </div>
 
