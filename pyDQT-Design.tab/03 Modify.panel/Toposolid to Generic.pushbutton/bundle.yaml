@@ -1,0 +1,2 @@
+title: "Toposolid\nto Generic"
+tooltip: "Create a Generic Model with exactly the shape of one toposolid - its sloped, sculpted top included - placed exactly where the toposolid is. It is selected when done. Select the toposolid first, or pick it when asked."

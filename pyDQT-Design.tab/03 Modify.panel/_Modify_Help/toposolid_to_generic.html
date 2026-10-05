@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Toposolid to Void - Modify Help</title>
+<title>Toposolid to Generic - Modify Help</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="page-header">
   <div class="inner">
     <div>
-      <h1>Toposolid to Void</h1>
+      <h1>Toposolid to Generic</h1>
       <p class="subtitle">by Dang Quoc Truong (DQT)</p>
     </div>
     <span class="badge">Site</span>
@@ -17,21 +17,18 @@
 </div>
 
 <div class="wrap">
-  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Toposolid to Void</p>
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Toposolid to Generic</p>
 
   <div class="card">
     <h2>What it does</h2>
     <p class="lede">
-      Creates a <b>void Generic Model</b> with exactly the shape of one
-      toposolid, placed exactly where the toposolid is. Use it with
-      <b>Modify &rsaquo; Cut Geometry</b> to cut other elements wherever they
-      run into the terrain.
+      Creates a <b>Generic Model</b> with exactly the shape of one toposolid,
+      placed exactly where the toposolid is.
     </p>
     <p>
       The shape is taken from the toposolid's finished solid geometry - its
-      sloped, sculpted top included - not a rebuilt outline. The void lives in
-      a small loadable Generic Model family with <b>Cut with Voids When
-      Loaded</b> already turned on, so it is ready to cut.
+      sloped, sculpted top included - not a rebuilt outline. It lives in a
+      small loadable Generic Model family as a solid form.
     </p>
   </div>
 
@@ -40,20 +37,17 @@
     <ol class="steps">
       <li>Select one toposolid - or run the tool with nothing selected and
         pick it. (With several selected, the tool asks you to pick one.)</li>
-      <li>Click <b>Toposolid to Void</b>. The family is built, loaded and
-        placed on the toposolid in one step you can Undo. The new void is
-        selected.</li>
-      <li><b>Modify &rsaquo; Cut Geometry</b>: click the element to cut, then
-        click the void. Repeat for every element to cut.</li>
+      <li>Click <b>Toposolid to Generic</b>. The family is built, loaded and
+        placed on the toposolid in one step you can Undo. The new Generic
+        Model is selected - hide the toposolid to see it.</li>
     </ol>
   </div>
 
   <div class="card">
     <h2>What you get</h2>
     <dl class="kv">
-      <dt class="v-dark">Element</dt><dd>a Generic Models family instance whose only geometry is an unattached void with the toposolid's shape</dd>
-      <dt class="v-dark">Family</dt><dd><span class="code">Toposolid Void - &lt;toposolid type&gt; (toposolid &lt;id&gt;)</span> - see Project Browser &rsaquo; Families &rsaquo; Generic Models</dd>
-      <dt class="v-dark">Cut with Voids When Loaded</dt><dd>on</dd>
+      <dt class="v-dark">Element</dt><dd>a Generic Models family instance with the toposolid's shape as a solid form</dd>
+      <dt class="v-dark">Family</dt><dd><span class="code">Toposolid Copy - &lt;toposolid type&gt; (toposolid &lt;id&gt;)</span> - see Project Browser &rsaquo; Families &rsaquo; Generic Models</dd>
       <dt class="v-dark">Position</dt><dd>exactly on the toposolid; on the toposolid's level when it has one</dd>
       <dt class="v-dark">Comments</dt><dd>says which toposolid it was copied from (type and id)</dd>
       <dt class="v-dark">Mark</dt><dd>carried over from the toposolid when it has one</dd>
@@ -62,24 +56,21 @@
 
   <div class="card">
     <h2>Good to know</h2>
-    <div class="box tip">
-      A void family cuts nothing on its own - each cut is made with
-      <b>Cut Geometry</b> (element first, then the void). Revit lets a loaded
-      family's void cut walls, floors, roofs, ceilings, structural framing,
-      columns and foundations, and generic models. Use <b>Uncut Geometry</b>
-      to take a cut off again.
+    <div class="box fixed">
+      <b>Why a solid, not a void.</b> The first version made the form a void
+      and failed in Revit with <span class="code">can't assign to read-only
+      property IsSolid</span>: Revit's API does not let an add-in turn a
+      Freeform form into a void. The copy is now a solid Generic Model.
     </div>
     <div class="box tip">
-      An unattached void shows in views as a see-through shape you can click.
-      Once your cuts are made you can hide it (Hide in View &rsaquo; Elements):
-      the cuts stay.
-    </div>
-    <div class="box tip">
-      The void is a snapshot. It does not follow the toposolid if the
+      The copy is a snapshot. It does not follow the toposolid if the
       toposolid is edited later - run the tool again (it asks before making a
-      second void for the same toposolid, named with a
-      <span class="code">v2</span> suffix), redo the cuts with the new void and
-      delete the old one.
+      second copy of the same toposolid, named with a
+      <span class="code">v2</span> suffix) and delete the old one.
+    </div>
+    <div class="box tip">
+      Material is not copied: the form uses the Generic Models default
+      (<b>By Category</b>). Change it in the family or with Paint if you need it.
     </div>
     <div class="box tip">
       The tool needs Revit's <span class="code">Metric Generic Model.rft</span>
