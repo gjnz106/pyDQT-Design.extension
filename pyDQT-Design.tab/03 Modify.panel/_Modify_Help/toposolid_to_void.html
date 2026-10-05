@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Toposolid to Void - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Toposolid to Void</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Site</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Toposolid to Void</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Creates a <b>void Generic Model</b> with exactly the shape of one
+      toposolid, placed exactly where the toposolid is. Use it with
+      <b>Modify &rsaquo; Cut Geometry</b> to cut other elements wherever they
+      run into the terrain.
+    </p>
+    <p>
+      The shape is taken from the toposolid's finished solid geometry - its
+      sloped, sculpted top included - not a rebuilt outline. The void lives in
+      a small loadable Generic Model family with <b>Cut with Voids When
+      Loaded</b> already turned on, so it is ready to cut.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select one toposolid - or run the tool with nothing selected and
+        pick it. (With several selected, the tool asks you to pick one.)</li>
+      <li>Click <b>Toposolid to Void</b>. The family is built, loaded and
+        placed on the toposolid in one step you can Undo. The new void is
+        selected.</li>
+      <li><b>Modify &rsaquo; Cut Geometry</b>: click the element to cut, then
+        click the void. Repeat for every element to cut.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>What you get</h2>
+    <dl class="kv">
+      <dt class="v-dark">Element</dt><dd>a Generic Models family instance whose only geometry is an unattached void with the toposolid's shape</dd>
+      <dt class="v-dark">Family</dt><dd><span class="code">Toposolid Void - &lt;toposolid type&gt; (toposolid &lt;id&gt;)</span> - see Project Browser &rsaquo; Families &rsaquo; Generic Models</dd>
+      <dt class="v-dark">Cut with Voids When Loaded</dt><dd>on</dd>
+      <dt class="v-dark">Position</dt><dd>exactly on the toposolid; on the toposolid's level when it has one</dd>
+      <dt class="v-dark">Comments</dt><dd>says which toposolid it was copied from (type and id)</dd>
+      <dt class="v-dark">Mark</dt><dd>carried over from the toposolid when it has one</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      A void family cuts nothing on its own - each cut is made with
+      <b>Cut Geometry</b> (element first, then the void). Revit lets a loaded
+      family's void cut walls, floors, roofs, ceilings, structural framing,
+      columns and foundations, and generic models. Use <b>Uncut Geometry</b>
+      to take a cut off again.
+    </div>
+    <div class="box tip">
+      An unattached void shows in views as a see-through shape you can click.
+      Once your cuts are made you can hide it (Hide in View &rsaquo; Elements):
+      the cuts stay.
+    </div>
+    <div class="box tip">
+      The void is a snapshot. It does not follow the toposolid if the
+      toposolid is edited later - run the tool again (it asks before making a
+      second void for the same toposolid, named with a
+      <span class="code">v2</span> suffix), redo the cuts with the new void and
+      delete the old one.
+    </div>
+    <div class="box tip">
+      The tool needs Revit's <span class="code">Metric Generic Model.rft</span>
+      family template. It finds it by itself under the family-template folder
+      set in Options &rsaquo; File Locations (or the standard install folder);
+      if it cannot, it asks you to browse to it.
+    </div>
+    <div class="box warn">
+      Works on toposolids (Revit 2024 and later) in the active model, one at a
+      time. A toposolid inside a linked model is not copied. A very large or
+      detailed toposolid takes longer, and if Revit refuses its geometry as a
+      family form the tool says so and changes nothing.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="floor_points.html"><span class="dir">&larr; Previous</span>Floor Points</a>
+    <a class="next" href="align_grids.html"><span class="dir">Next tool &rarr;</span>Align Grids</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>

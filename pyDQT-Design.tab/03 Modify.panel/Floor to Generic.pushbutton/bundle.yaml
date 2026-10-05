@@ -1,2 +1,0 @@
-title: "Floor to\nGeneric"
-tooltip: "Turn the selected floors into a Model In-Place (Generic Models) with exactly their shape - sloped, shape-edited, with openings and cut by joined walls. Unlike a floor, it can be joined or cut with a toposolid. The tool opens the shape in a temporary family, selected: press Ctrl+C, then in the project Model In-Place > Generic Models, Paste > Aligned to Same Place, Finish Model. (Revit's API cannot create a Model In-Place by itself.)"
