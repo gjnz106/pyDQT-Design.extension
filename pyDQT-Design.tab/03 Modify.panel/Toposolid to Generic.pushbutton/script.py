@@ -1,35 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-Toposolid to Void v1.0 - DQT
-Creates a void Generic Model with exactly the shape of one toposolid, placed
-exactly where the toposolid is - for cutting other elements with
-Modify > Cut Geometry.
+Toposolid to Generic v2.0 - DQT
+Creates a Generic Model with exactly the shape of one toposolid, placed
+exactly where the toposolid is.
 
-The toposolid is turned into a small Generic Model family: its solid geometry
-becomes an unattached void form, and the family's "Cut with Voids When Loaded"
-option is turned on, so the void can cut elements in the project. The family
-is loaded into the project and one instance is placed on the toposolid.
+The toposolid is turned into a small Generic Model family - its solid geometry
+becomes a solid Freeform form - which is loaded into the project, and one
+instance is placed on the toposolid.
+
+(v1.0 made the form a void. Revit's API does not let an add-in turn a Freeform
+form into a void - GenericForm.IsSolid is read-only - so the copy is a solid.)
 
 The shape is taken from the toposolid's own solid geometry - the finished
 terrain as Revit shows it, with its sloped and sculpted top. The family keeps
 its origin near the toposolid, not at the project origin, so a site far from
 the origin does not end up with distant geometry in the family.
 
-The family is named "Toposolid Void - <toposolid type> (toposolid <id>)".
+The family is named "Toposolid Copy - <toposolid type> (toposolid <id>)".
 
 Workflow:
   1. Select one toposolid (or run with none selected and pick it).
-  2. Run - the void is created on the toposolid and selected.
-  3. Modify > Cut Geometry: click the element to cut, then the void.
+  2. Run - the Generic Model is created on the toposolid and selected.
 
 Copyright (c) 2026 Dang Quoc Truong (DQT)
 All rights reserved.
 """
 
-__title__ = "Toposolid\nto Void"
+__title__ = "Toposolid\nto Generic"
 __author__ = "Dang Quoc Truong (DQT)"
-__doc__ = ("Create a void Generic Model with exactly the shape of a toposolid, "
-           "to cut other elements with Cut Geometry.")
+__doc__ = ("Create a Generic Model with exactly the shape of a toposolid, "
+           "placed where the toposolid is.")
 
 # ==============================================================================
 # IMPORTS
@@ -59,12 +59,12 @@ app = __revit__.Application
 # ==============================================================================
 # CONSTANTS
 # ==============================================================================
-TITLE = "Toposolid to Void"
-FAMILY_PREFIX = "Toposolid Void - "
-# "...(toposolid 123)" or "...(toposolid 123) v2" - how a void is traced back
+TITLE = "Toposolid to Generic Model"
+FAMILY_PREFIX = "Toposolid Copy - "
+# "...(toposolid 123)" or "...(toposolid 123) v2" - how a copy is traced back
 # to its toposolid
 FAMILY_NAME_RE = re.compile(r"\(toposolid (\d+)\)(?: v\d+)?$")
-TEMP_FOLDER = "DQT_ToposolidToVoid"
+TEMP_FOLDER = "DQT_ToposolidToGeneric"
 MIN_VOLUME_FT3 = 1e-9                    # ignore empty / degenerate solids
 MOVE_TOLERANCE_FT = 1e-6
 # Characters a family name cannot have: Revit's own list plus the ones a file
@@ -329,10 +329,10 @@ def ask_for_template():
 
 
 # ==============================================================================
-# VOIDS MADE EARLIER
+# COPIES MADE EARLIER
 # ==============================================================================
 def find_existing_copies(document):
-    """{toposolid id (int): [instance ElementId, ...]} for the voids this tool
+    """{toposolid id (int): [instance ElementId, ...]} for the copies this tool
     made before, found through the toposolid id in each family's name. Only
     placed instances count."""
     copies = {}
@@ -377,21 +377,10 @@ def existing_family_names(document):
 # ==============================================================================
 # BUILD THE FAMILY (in a family document of its own)
 # ==============================================================================
-def allow_cut_with_voids(family):
-    """Turn on the family's "Cut with Voids When Loaded" - without it the
-    void cannot cut anything in the project."""
-    param = family.get_Parameter(DB.BuiltInParameter.FAMILY_ALLOW_CUT_WITH_VOIDS)
-    if param is None or param.IsReadOnly:
-        raise CopyError("the family's \"Cut with Voids When Loaded\" option "
-                        "cannot be turned on")
-    param.Set(1)
-
-
-def build_void_family(application, template_path, solids, origin, family_name):
+def build_family_file(application, template_path, solids, origin, family_name):
     """Make a family from the template, put the toposolid's solids in it as
-    unattached void forms (moved so the family origin is at `origin`), turn on
-    Cut with Voids When Loaded, save it as <family_name>.rfa in the temp folder
-    and return that path. The family document is always closed again. Raises
+    solid Freeform forms (moved so the family origin is at `origin`), save it
+    as <family_name>.rfa in the temp folder and return that path. The family document is always closed again. Raises
     TemplateError for a template that is not a Generic Model one, CopyError
     when the geometry is refused."""
     family_doc = application.NewFamilyDocument(template_path)
@@ -399,22 +388,19 @@ def build_void_family(application, template_path, solids, origin, family_name):
         raise TemplateError("Revit could not open the family template "
                             "{0}".format(template_path))
     try:
-        family = family_doc.OwnerFamily
-        category = family.FamilyCategory
+        category = family_doc.OwnerFamily.FamilyCategory
         if (category is None or
                 eid_int(category.Id) != int(DB.BuiltInCategory.OST_GenericModel)):
             raise TemplateError(
                 "{0} is not a Generic Model family template.".format(template_path))
 
-        transaction = Transaction(family_doc, "DQT - Toposolid void")
+        transaction = Transaction(family_doc, "DQT - Toposolid form")
         transaction.Start()
         try:
             shift = DB.Transform.CreateTranslation(origin.Negate())
             for solid in solids:
-                form = DB.FreeFormElement.Create(
+                DB.FreeFormElement.Create(
                     family_doc, DB.SolidUtils.CreateTransformed(solid, shift))
-                form.IsSolid = False
-            allow_cut_with_voids(family)
             if transaction.Commit() != DB.TransactionStatus.Committed:
                 raise CopyError("Revit rejected the toposolid's geometry in "
                                 "the family")
@@ -485,12 +471,12 @@ def snap_to(document, instance, target):
 
 
 def write_notes(instance, document, toposolid):
-    """Comments says where the void came from; Mark is carried over."""
+    """Comments says where the copy came from; Mark is carried over."""
     try:
         comments = instance.get_Parameter(
             DB.BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
         if comments is not None and not comments.IsReadOnly:
-            comments.Set("Void copy of toposolid {0}".format(
+            comments.Set("Copy of toposolid {0}".format(
                 toposolid_label(document, toposolid)))
     except Exception:
         pass
@@ -529,8 +515,8 @@ def load_and_place(document, toposolid, family_name, path, origin):
     return instance.Id
 
 
-def create_void(document, application, template_path, toposolid_id):
-    """Copy the toposolid to a void Generic Model. Returns (new instance id,
+def create_copy(document, application, template_path, toposolid_id):
+    """Copy the toposolid to a Generic Model. Returns (new instance id,
     family name). The family is built first, with no transaction open on the
     project; then it is loaded and placed in ONE transaction (one Undo). The
     temporary family file is always removed."""
@@ -545,9 +531,9 @@ def create_void(document, application, template_path, toposolid_id):
         origin = copy_origin(toposolid)
         name = unique_family_name(base_family_name(document, toposolid),
                                   existing_family_names(document))
-        path = build_void_family(application, template_path, solids, origin, name)
+        path = build_family_file(application, template_path, solids, origin, name)
 
-        transaction = Transaction(document, "DQT - Toposolid to Void")
+        transaction = Transaction(document, "DQT - Toposolid to Generic Model")
         transaction.Start()
         try:
             new_id = load_and_place(document, toposolid, name, path, origin)
@@ -589,7 +575,7 @@ def get_target_toposolid_id():
     try:
         reference = uidoc.Selection.PickObject(
             ObjectType.Element, ToposolidFilter(),
-            "Select the toposolid to copy as a void")
+            "Select the toposolid to copy as a Generic Model")
     except Exception:
         return None             # Escape
     if is_toposolid(doc.GetElement(reference.ElementId)):
@@ -609,16 +595,16 @@ def show(instruction, content=""):
 
 
 def ask_about_existing(count):
-    """True to make another void for a toposolid that already has one."""
+    """True to make another copy of a toposolid that already has one."""
     dialog = TaskDialog(TITLE)
-    dialog.MainInstruction = ("This toposolid already has {0} void copy(ies) "
-                              "made by this tool.".format(count))
-    dialog.MainContent = ("Making another one puts a second void exactly on "
+    dialog.MainInstruction = ("This toposolid already has {0} Generic Model "
+                              "copy(ies) made by this tool.".format(count))
+    dialog.MainContent = ("Making another one puts a second copy exactly on "
                           "top of the first.")
     dialog.AddCommandLink(
         TaskDialogCommandLinkId.CommandLink1,
-        "Create another void",
-        "Use this after the toposolid changed shape - delete the old void "
+        "Create another copy",
+        "Use this after the toposolid changed shape - delete the old copy "
         "afterwards.")
     dialog.CommonButtons = TaskDialogCommonButtons.Cancel
     dialog.DefaultButton = TaskDialogResult.Cancel
@@ -628,13 +614,10 @@ def ask_about_existing(count):
 
 def done_text(family_name):
     return (
-        "The void sits exactly where the toposolid is and is selected now. "
-        "Its family \"{0}\" has \"Cut with Voids When Loaded\" on.\n\n"
-        "To cut an element with it: Modify > Cut Geometry, click the element "
-        "to cut, then click the void. Walls, floors, roofs, ceilings, "
-        "structural framing, columns and foundations, and generic models can "
-        "be cut.\n\n"
-        "The void is a snapshot: it does not follow the toposolid if the "
+        "The Generic Model sits exactly where the toposolid is and is "
+        "selected now - hide the toposolid to see it. Its family is "
+        "\"{0}\".\n\n"
+        "The copy is a snapshot: it does not follow the toposolid if the "
         "toposolid is edited later.").format(family_name)
 
 
@@ -644,7 +627,7 @@ def done_text(family_name):
 def run():
     if doc.IsFamilyDocument:
         show("Open a project first.",
-             "Toposolid to Void works in a project, not in a family.")
+             "Toposolid to Generic works in a project, not in a family.")
         return
     if TOPOSOLID_CLASS is None:
         show("This Revit version has no toposolids.",
@@ -663,19 +646,19 @@ def run():
     template_path = find_generic_model_template(app) or ask_for_template()
     if not template_path:
         show("No Generic Model family template was found.",
-             "The tool builds the void in a small Generic Model family, and "
+             "The tool builds the copy in a small Generic Model family, and "
              "needs Revit's \"Metric Generic Model.rft\" template for that. "
              "Set its folder in Options > File Locations > Default path for "
              "family templates, then run the tool again.")
         return
 
     try:
-        new_id, family_name = create_void(doc, app, template_path, toposolid_id)
+        new_id, family_name = create_copy(doc, app, template_path, toposolid_id)
     except TemplateError as error:
         show("The family template cannot be used.", str(error))
         return
     except Exception as error:
-        show("The void could not be created.",
+        show("The Generic Model could not be created.",
              "Toposolid {0} - nothing was changed.\n\n{1}".format(label, error))
         return
 
@@ -683,7 +666,7 @@ def run():
         uidoc.Selection.SetElementIds(List[DB.ElementId]([new_id]))
     except Exception:
         pass
-    show("Created a void from toposolid {0}.".format(label),
+    show("Created a Generic Model from toposolid {0}.".format(label),
          done_text(family_name))
 
 
