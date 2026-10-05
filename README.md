@@ -93,7 +93,7 @@ to the same location, and press the pyRevit **Reload** button.
 - **AutoJoin** — Auto-join elements with rule-based category pairs (save/load settings).
 - **CAD to Floor** — Create Floors or Parts (DirectShape) from linked/imported DWG geometry.
 - **CAD to Wall** — Detect parallel CAD line pairs, compute centerlines, auto-create matching wall types.
-- **Floor to Generic Model** — Create a Generic Model family with exactly the shape of each selected floor, one that can be joined or cut with a toposolid (a floor cannot).
+- **Floor to Generic** — Turn selected floors into a Model In-Place (Generic Models) with exactly their shape, one that can be joined or cut with a toposolid (a floor cannot). The tool prepares the shape; Copy → Model In-Place → Paste Aligned to Same Place finishes it.
 - **Gridline** (drop-down): Align Gridline · Convert Gridline (swap 3D ↔ 2D extents).
 - **Level** (drop-down): Align Level · Convert Level (swap 3D ↔ 2D extents, bubble control) · Level Impact (elevation-change compensation) · Rehost Level.
 - **Revise Base** — Auto-adjust Base Offset when changing Base Constraint to keep position.
