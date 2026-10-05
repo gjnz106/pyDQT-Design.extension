@@ -1,0 +1,2 @@
+title: "Toposolid\nto Void"
+tooltip: "Create a void Generic Model with exactly the shape of one toposolid - its sloped, sculpted top included - placed exactly where the toposolid is, with Cut with Voids When Loaded on. Then use Modify > Cut Geometry (element to cut, then the void) to cut walls, floors, foundations and other elements where they run into the terrain. Select the toposolid first, or pick it when asked."
