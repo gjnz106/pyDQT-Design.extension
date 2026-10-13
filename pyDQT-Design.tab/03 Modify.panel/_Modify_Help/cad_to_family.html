@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CAD to Family - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>CAD to Family</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">CAD</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>CAD to Family</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Turns a <b>3D CAD import</b> (DWG, DXF, SAT, SKP...) into a loadable
+      <b>Generic Model family</b> and places it exactly where every copy of the
+      CAD is - same point, turned the same way.
+    </p>
+    <p>
+      The CAD's 3D geometry is rebuilt as native Revit geometry, so the result
+      is a real family you can schedule, give a material, cut and join - and
+      the imported CAD can go. One family is made per CAD file, so a hundred
+      copies of the same block (armour units, precast pieces, equipment) become
+      one family with a hundred instances.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Select the CAD import(s) - or run the tool with nothing selected and
+        pick one. Several CAD files can be selected at once.</li>
+      <li>Click <b>CAD to Family</b>. The dialog shows, for each CAD file, how
+        many copies are selected and how many are in the project.</li>
+      <li>Choose <b>All copies in the project</b> or <b>Only the selected</b>.
+        Tick <b>Delete the CAD once the families are placed</b> to remove the
+        imports in the same step (Undo brings them back).</li>
+      <li>The families are built, loaded and placed in one step you can Undo.
+        The new Generic Models are selected, and a summary says what each
+        family is made of.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>What you get</h2>
+    <dl class="kv">
+      <dt class="v-dark">Family</dt><dd>named after the CAD file without its extension - <span class="code">xblocplus_0.5m3.dwg</span> &rarr; <span class="code">xblocplus_0.5m3</span> (<span class="code">v2</span> when that name is taken). Project Browser &rsaquo; Families &rsaquo; Generic Models</dd>
+      <dt class="v-dark">Instances</dt><dd>one per 3D copy of the CAD, at the same point and turned the same way in plan</dd>
+      <dt class="v-dark">Family origin</dt><dd>the bottom centre of the CAD geometry - not the DWG's origin, so a drawing far from its origin still gives a compact family</dd>
+      <dt class="v-dark">Material</dt><dd>a <b>Material</b> type parameter drives every solid form - set it once for all instances</dd>
+      <dt class="v-dark">Level / Workset</dt><dd>the CAD's level (else the level at or below it) and the CAD's workset</dd>
+      <dt class="v-dark">Comments</dt><dd>names the CAD copy each instance replaces</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>How the geometry is rebuilt</h2>
+    <dl class="kv">
+      <dt class="v-green">CAD solids</dt><dd>3D solids (ACIS) become solid Freeform forms</dd>
+      <dt class="v-green">Closed meshes</dt><dd>the triangles of a polyface / mesh body are turned into a solid first, then into a solid form. Loose 3D faces (one face each) are joined up and closed into a solid when they enclose a volume</dd>
+      <dt class="v-gold">Open meshes</dt><dd>a mesh that does not enclose a volume cannot be a solid: it is kept as mesh geometry (a DirectShape) inside the family, so the shape stays complete. It shows and prints, but cannot be cut or joined and takes no material</dd>
+      <dt class="v-red">Lines</dt><dd>2D lines and curves are not part of the family. A CAD with only lines is refused</dd>
+    </dl>
+    <p>Blocks inside the CAD (blocks within blocks too) are opened up and placed
+      where they are in the drawing.</p>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      <b>Tilted, mirrored or scaled copies.</b> A Generic Model can only be
+      turned in plan. A copy of the CAD that is tilted, mirrored or scaled in
+      3D gets a family of its own with that orientation built in, named
+      <span class="code">&lt;name&gt; (tilted 1)</span>, <span class="code">(tilted 2)</span>... -
+      it still lands exactly where the CAD is.
+    </div>
+    <div class="box tip">
+      <b>Deleting the CAD.</b> With the option ticked, every converted copy is
+      deleted, and the CAD import type too when no copy of it is left (so it
+      does not stay behind as an unused CAD type that Model Health Check counts
+      as a CAD import). A 2D, view-specific copy of the same CAD is never
+      converted and keeps the type.
+    </div>
+    <div class="box tip">
+      The family is a snapshot of the CAD: re-importing a changed DWG does not
+      update it. Run the tool again on the new import - the new family is named
+      with a <span class="code">v2</span> suffix - and delete the old one.
+    </div>
+    <div class="box tip">
+      The tool needs Revit's <span class="code">Metric Generic Model.rft</span>
+      family template. It finds it by itself under the family-template folder
+      set in Options &rsaquo; File Locations (or the standard install folder);
+      if it cannot, it asks you to browse to it.
+    </div>
+    <div class="box warn">
+      Works on 3D CAD imports and links in the active model. A 2D,
+      view-specific CAD has no 3D geometry and cannot be picked. A very large
+      or detailed CAD takes longer to rebuild; if Revit refuses all of its
+      geometry the tool says so and changes nothing.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="cad_to_floor.html"><span class="dir">&larr; Previous</span>CAD to Floor / Part</a>
+    <a class="next" href="cad_to_wall.html"><span class="dir">Next tool &rarr;</span>CAD to Wall</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
