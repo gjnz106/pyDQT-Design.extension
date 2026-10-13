@@ -1,0 +1,3 @@
+title: "CAD to\nFamily"
+tooltip: "Turn a 3D CAD import (DWG, DXF, SAT, SKP...) into a Generic Model family - solids and closed meshes become solid forms with a Material parameter - and place it exactly where every copy of the CAD is, turned the same way. Optionally deletes the CAD afterwards. Select the CAD first, or pick it when asked."
+author: Dang Quoc Truong (DQT)
