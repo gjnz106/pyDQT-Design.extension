@@ -1,6 +1,7 @@
 title: "Views & Sheets"
 layout:
   - ViewManager_Advanced
+  - Copy Template Filters
   - SheetManager_Advanced
   - Linked Element Box
   - Sheet re-number
