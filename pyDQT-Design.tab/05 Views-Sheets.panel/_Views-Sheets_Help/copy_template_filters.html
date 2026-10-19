@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Copy Template Filters - Views-Sheets Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Copy Template Filters</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">View templates</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Views-Sheets Toolset</a><span>&rsaquo;</span>Copy Template Filters</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Copies view filters from one view template to as many other view
+      templates as you tick. Each filter comes across exactly as
+      Visibility/Graphics &rsaquo; Filters shows it in the source: its
+      <b>Visible</b> and <b>Enabled</b> boxes and its graphic overrides
+      (projection and cut lines, surface and cut patterns, halftone,
+      transparency). Everything happens in one transaction, so one Undo
+      takes it all back.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>The window</h2>
+    <dl class="kv">
+      <dt class="v-dark">1. Source</dt><dd>the view template to copy from. Its filters are listed in
+        Visibility/Graphics order with a line saying <span class="code">Visible / Hidden</span>,
+        <span class="code">Enabled / Disabled</span> and what their overrides change
+        (e.g. <span class="code">lines, patterns, transparency 40%</span>). All are ticked at first -
+        untick the ones you don't want; <b>All</b> / <b>None</b> do the whole list</dd>
+      <dt class="v-dark">2. Targets</dt><dd>every other view template that can carry filters (schedule
+        templates can't, so they are not listed), with its view type and how many filters it has now.
+        Search narrows the list by name or view type, and ticks are kept while you search.
+        <b>All shown</b> ticks just the templates the search shows</dd>
+      <dt class="v-gold">Orange line</dt><dd><span class="code">does not control V/G Filters</span> -
+        the template has V/G Overrides Filters unticked in its Include column, so whatever filters it
+        holds never reach the views that use it</dd>
+      <dt class="v-dark">3. How to copy</dt><dd>see the table below; the box under it switches
+        V/G Overrides Filters on in those orange templates (ticked by default)</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Three ways to copy</h2>
+    <table class="cmp">
+      <tr><th>Mode</th><th>Filter the target doesn't have</th><th>Filter the target already has</th><th>Target's other filters</th></tr>
+      <tr><td><b>Add &amp; update</b> (default)</td><td>added, with the source's settings</td><td>takes the source's settings</td><td>left alone</td></tr>
+      <tr><td><b>Add only</b></td><td>added, with the source's settings</td><td>left exactly as it is</td><td>left alone</td></tr>
+      <tr><td><b>Replace</b></td><td>added, with the source's settings</td><td>takes the source's settings</td><td><b>removed</b> - the list ends up identical to the ticked filters, in the source's order</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li>Pick the <b>source</b> view template and untick any filter you don't want to copy.</li>
+      <li>Tick the <b>target</b> view templates.</li>
+      <li>Choose <b>Add &amp; update</b>, <b>Add only</b> or <b>Replace</b>. Replace asks first and
+        says how many filters it will take out of the targets.</li>
+      <li>Click <b>Copy Filters</b>. A summary lists, per template, how many filters were added,
+        updated, kept or removed, any filter Revit refused, and the templates where V/G Overrides
+        Filters was switched on. The target list refreshes with the new filter counts.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Filter <b>order</b> matters in Revit - when two filters change the same thing, the one higher in
+      the list wins. Add &amp; update and Add only put new filters at the <b>bottom</b> of the target's
+      list and don't move the ones it already has. Use <b>Replace</b> when the target must end up in
+      the same order as the source.
+    </div>
+    <div class="box tip">
+      Copying changes the templates themselves, so every view that uses a target template picks up the
+      filters straight away - as long as that template controls V/G Overrides Filters.
+    </div>
+    <div class="box warn">
+      Replace with no filter ticked empties the targets' filter lists. It still asks first, and Undo
+      brings everything back.
+    </div>
+    <div class="box tip">
+      If Revit refuses one filter in one template (for example a filter it won't apply to that kind of
+      view), the summary names it with &#10006; and the rest of the copy still goes through.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="view_manager_advanced.html"><span class="dir">&larr; Previous</span>Advanced View Manager</a>
+    <a class="next" href="index.html"><span class="dir">Back to</span>Views-Sheets Toolset</a>
+  </div>
+  <footer class="site">Views-Sheets Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
