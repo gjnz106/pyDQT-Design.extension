@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Copy Template Filters v1.0
+"""Copy Template Filters v1.1
 Author: Dang Quoc Truong (DQT)
 
 Copies view filters from one view template to other view templates - each
@@ -227,6 +227,16 @@ class FilterRow(object):
 
 def source_filters(doc, view):
     return [FilterRow(doc, view, fid) for fid in ordered_filter_ids(view)]
+
+
+def filter_count_text(count):
+    return "{} filter{}".format(count, "" if count == 1 else "s")
+
+
+def template_label(template):
+    """A source list entry: name, view type and how many filters it has."""
+    return u"{}  ·  {}  ·  {}".format(template.Name, pretty_view_type(template),
+                                     filter_count_text(len(ordered_filter_ids(template))))
 
 
 # ============================================================================
@@ -531,9 +541,13 @@ class CopyFiltersWindow(WPFWindow):
         self.filter_boxes = []        # (FilterRow, CheckBox)
         self.target_boxes = []        # (template, CheckBox)
         self.ticked_targets = set()   # template id ints - survive searching
+        self.source_items = []        # ComboBoxItem per template, same order
 
         for template in self.templates:
-            self.cmbSource.Items.Add(u"{}  ·  {}".format(template.Name, pretty_view_type(template)))
+            item = WPFControls.ComboBoxItem()
+            item.Content = template_label(template)
+            self.cmbSource.Items.Add(item)
+            self.source_items.append(item)
         self.cmbSource.SelectionChanged += self.on_source_changed
         self.txtSearch.TextChanged += self.on_search
         self.btnFiltersAll.Click += lambda s, e: self._tick_filters(True)
@@ -580,7 +594,7 @@ class CopyFiltersWindow(WPFWindow):
             self.filter_boxes.append((row, box))
         if not rows:
             note = WPFControls.TextBlock()
-            note.Text = "This template has no filters."
+            note.Text = "This template has no filters - pick a source that has some (the count is in the list)."
             note.Foreground = _brush(GREY)
             self.pnlFilters.Children.Add(note)
         self._update_counts()
@@ -611,7 +625,7 @@ class CopyFiltersWindow(WPFWindow):
                 continue
             count = len(ordered_filter_ids(template))
             controls = controls_filters(template)
-            detail = u"{}  ·  {} filter(s)".format(kind, count)
+            detail = u"{}  ·  {}".format(kind, filter_count_text(count))
             if not controls:
                 detail += u"  ·  does not control V/G Filters"
             box = WPFControls.CheckBox()
@@ -622,6 +636,12 @@ class CopyFiltersWindow(WPFWindow):
             self.pnlTargets.Children.Add(box)
             self.target_boxes.append((template, box))
         self._update_counts()
+
+    def _refresh_counts(self):
+        """Filter counts change in the targets after a copy. Only the item's
+        Content changes, so the picked source stays picked."""
+        for template, item in zip(self.templates, self.source_items):
+            item.Content = template_label(template)
 
     def _remember_ticks(self):
         for template, box in self.target_boxes:
@@ -684,6 +704,7 @@ class CopyFiltersWindow(WPFWindow):
             forms.alert("The filters could not be copied - nothing was changed.\n\n{}".format(error),
                         title=TITLE)
             return
+        self._refresh_counts()
         self._fill_targets()
         failures = sum(len(r.failed) for r in reports)
         self.txtStatus.Text = u"Copied from \"{}\" to {} template(s) at {}{}.".format(
