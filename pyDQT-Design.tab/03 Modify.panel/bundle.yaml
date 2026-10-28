@@ -11,5 +11,6 @@ layout:
   - PropertyLineFromExcel
   - RoomtoArea
   - Autojoin
+  - Fix Off Axis
   - Gridline
   - Level

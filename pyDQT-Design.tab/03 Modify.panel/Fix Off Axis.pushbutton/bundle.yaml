@@ -1,0 +1,3 @@
+title: "Fix\nOff Axis"
+tooltip: Turn walls, grids, reference planes, model / detail / separation lines and beams that are slightly off axis back onto the nearest axis - clears Revit's "slightly off axis and may cause inaccuracies" warnings. Preview first, one Undo.
+author: Dang Quoc Truong - DQT
