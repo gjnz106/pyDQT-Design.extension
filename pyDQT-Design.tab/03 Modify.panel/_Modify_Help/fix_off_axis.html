@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fix Off Axis - Modify Help</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-header">
+  <div class="inner">
+    <div>
+      <h1>Fix Off Axis</h1>
+      <p class="subtitle">by Dang Quoc Truong (DQT)</p>
+    </div>
+    <span class="badge">Warnings</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="crumbs"><a href="index.html">Modify Toolset</a><span>&rsaquo;</span>Fix Off Axis</p>
+
+  <div class="card">
+    <h2>What it does</h2>
+    <p class="lede">
+      Turns elements that are a hair off the model axes back onto them - the cause of Revit's
+      <span class="code">... is slightly off axis and may cause inaccuracies</span> warnings. Each
+      element turns about its <b>own midpoint</b> onto the nearest axis, so it keeps its length and
+      position; what is joined to it follows.
+    </p>
+    <p>
+      It handles <b>Walls</b>, <b>Grids</b>, <b>Reference Planes</b>, <b>Model &amp; Detail Lines</b>,
+      <b>Room / Area / Space Separation Lines</b> and <b>Beams &amp; Braces</b> in one window. It
+      replaces the old <i>Fix Element Off Axis</i> pulldown (one button per category).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Workflow</h2>
+    <ol class="steps">
+      <li><b>1. Elements</b> - tick the kinds to check.</li>
+      <li><b>2. Where</b> - the whole model, what is visible in the active view, or the current
+        selection.</li>
+      <li><b>3. Rules</b> - keep <b>Only elements in Revit's off-axis warnings</b> ticked to fix
+        exactly what Revit warns about. Untick it to find every element off by up to the angle
+        limit (1&deg; by default, at most 5&deg; - beyond that a line is drawn at an angle on
+        purpose). Tick <b>Also snap to 45-degree diagonals</b> for elements meant to sit at
+        45&deg;.</li>
+      <li><b>Scan</b> - the list shows each element, how far it is off, how far its ends would move
+        and whether Revit warns about it. Untick any you want left as they are.</li>
+      <li><b>Fix Ticked</b> - asks first, then turns them. A summary gives how many were fixed, any
+        Revit refused, and Revit's off-axis warning count before and after. One Undo reverts the
+        whole run.</li>
+    </ol>
+    <p><b>Select in Revit</b> closes the window and selects the ticked elements (all listed when
+      none is ticked), so you can look at them first.</p>
+  </div>
+
+  <div class="card">
+    <h2>Which axis</h2>
+    <dl class="kv">
+      <dt class="v-dark">In plan</dt><dd>walls, grids, beams and lines drawn in plan snap to model
+        X / Y (0&deg;, 90&deg;, 180&deg;, 270&deg;). A sloped beam keeps its slope - only its
+        direction in plan changes.</dd>
+      <dt class="v-dark">In elevation / section</dt><dd>a detail line, or a reference plane drawn in
+        a section or elevation, snaps to that view's horizontal or vertical, and stays in its view
+        plane.</dd>
+      <dt class="v-dark">Diagonals</dt><dd>with the 45-degree option, 45&deg;, 135&deg;, ... are
+        targets too.</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Left alone (listed in orange)</h2>
+    <dl class="kv">
+      <dt class="v-gold">Pinned</dt><dd>unpin it first if it should be fixed</dd>
+      <dt class="v-gold">In a group</dt><dd>edit the group and fix it there</dd>
+      <dt class="v-gold">Stacked wall part</dt><dd>fix the stacked wall itself</dd>
+      <dt class="v-gold">Multi-segment grid</dt><dd>a segment of a multi-segment grid</dd>
+      <dt class="v-gold">Another user's</dt><dd>borrowed by someone else in a workshared model</dd>
+      <dt class="v-gold">Over the limit</dt><dd>Revit warns about it, but it is off by more than the
+        angle limit - raise the limit if it really should be straight</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <div class="box tip">
+      Every element is turned in its own step and checked afterwards. One that Revit refuses (it
+      cannot keep a join, a constraint gets in the way) is rolled back and named in the summary;
+      the rest still go through.
+    </div>
+    <div class="box tip">
+      Not handled: lines inside a floor / roof / ceiling sketch (edit the sketch), levels, and
+      other line-based families. Their warnings stay in the "after" count.
+    </div>
+    <div class="box warn">
+      Ends of long elements move furthest - a 10 m wall off by 0.05&deg; moves each end about
+      4.4 mm. The list shows the movement for each element before you fix it.
+    </div>
+    <div class="box fixed">
+      <b>Replaces Fix Element Off Axis.</b> Its Fix Beam and Fix Line buttons measured the angle
+      against the wrong axis and never turned anything (reporting "all aligned"), and Fix Ref Line
+      showed the same name as Fix Line.
+    </div>
+  </div>
+
+  <div class="pagenav">
+    <a class="prev" href="toposolid_to_generic.html"><span class="dir">&larr; Previous</span>Toposolid to Generic</a>
+    <a class="next" href="align_grids.html"><span class="dir">Next tool &rarr;</span>Align Grids</a>
+  </div>
+  <footer class="site">Modify Toolset &middot; Dang Quoc Truong (DQT) &copy; 2026</footer>
+</div>
+</body>
+</html>
