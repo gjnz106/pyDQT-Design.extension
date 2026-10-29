@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Fix Off Axis v1.0
+"""Fix Off Axis v1.1
 Author: Dang Quoc Truong (DQT)
 
 Straightens elements that are a hair off the model axes - what Revit's
@@ -7,7 +7,16 @@ Straightens elements that are a hair off the model axes - what Revit's
 by turning each one about its own midpoint onto the nearest axis:
 
   Walls, Grids, Reference Planes, Model & Detail Lines,
-  Room / Area / Space Separation Lines, Beams & Braces
+  Room / Area / Space Separation Lines, Beams & Braces,
+  Floor / Roof / Ceiling Sketch Lines
+
+A sketch line is one edge of a closed boundary, so it cannot turn on its
+own: the edge is put on the axis through its midpoint and its two
+neighbouring edges are trimmed / extended to meet it - what Align + Trim
+do by hand in Edit Boundary - inside a sketch edit of that floor, roof or
+ceiling. The preview gives how far the corners move and how much the area
+changes; more than 0.1 % of the area, a curved neighbour or a neighbour
+running along the edge is left to fix by hand.
 
 The axis is the model X / Y in plan. A line drawn in an elevation or
 section (a detail line, a reference plane) snaps to that view's horizontal
@@ -24,6 +33,8 @@ whole run is still one Undo.
 Replaces the Fix Element Off Axis pulldown (5 buttons), whose Beam and
 Line buttons measured the angle against the wrong axis and never turned
 anything.
+
+v1.1: Floor / Roof / Ceiling Sketch Lines.
 """
 __title__ = "Fix\nOff Axis"
 __author__ = "DQT"
@@ -56,6 +67,9 @@ MIN_DEVIATION_DEG = 1e-9     # below this a line is on its axis
 VERIFY_DEG = 1e-6            # after the fix the element must be this close
 MAX_LIMIT_DEG = 5.0          # beyond this a line is drawn at an angle on purpose
 FEET_TO_MM = 304.8
+SQFT_TO_SQM = 0.09290304
+CORNER_TOL = 1e-5            # sketch-line ends this close meet at a corner (feet)
+MAX_AREA_CHANGE = 0.001      # a sketch fix may change the area by at most 0.1 %
 
 FIXED = "fixed"
 FAILED = "failed"
@@ -70,6 +84,7 @@ KINDS = [
     ("separations", "Room / Area / Space Separation Lines", "Separation Line",
      ("OST_RoomSeparationLines", "OST_AreaSchemeLines", "OST_MEPSpaceSeparationLines")),
     ("beams", "Beams & Braces", "Beam / Brace", ("OST_StructuralFraming",)),
+    ("sketches", "Floor / Roof / Ceiling Sketch Lines", "Sketch Line", ("OST_SketchLines",)),
 ]
 KIND_LABELS = dict((k[0], k[1]) for k in KINDS)
 KIND_SINGULAR = dict((k[0], k[2]) for k in KINDS)
@@ -120,6 +135,12 @@ def fmt_mm(value):
     if value < 0.01:
         return "< 0.01 mm"
     return "{} mm".format(round(value, 2))
+
+
+def fmt_sqm(value):
+    if value < 0.0001:
+        return u"< 0.0001 m\u00b2"
+    return u"{} m\u00b2".format(round(value, 4))
 
 
 # ============================================================================
@@ -178,7 +199,7 @@ def geometry_of(elem, kind):
             if seen.GetLength() < 1e-9:
                 return None
             return start, end, seen.Normalize()
-        if kind in ("lines", "separations"):
+        if kind in ("lines", "separations", "sketches"):
             line = elem.GeometryCurve
             if not isinstance(line, DB.Line):
                 return None
@@ -223,6 +244,160 @@ def skip_reason(doc, elem, kind):
     except Exception:
         pass
     return None
+
+
+# ============================================================================
+# SKETCH LINES - one edge of a floor / roof / ceiling boundary
+# ============================================================================
+def sketch_owners(doc):
+    """{sketch-line id int: (Sketch, owning element, ElementId)} for every sketch."""
+    found = {}
+    for sketch in DB.FilteredElementCollector(doc).OfClass(DB.Sketch):
+        try:
+            owner = doc.GetElement(sketch.OwnerId)
+            for eid in sketch.GetAllElements():
+                found[_eid_int(eid)] = (sketch, owner, eid)
+        except Exception:
+            continue
+    return found
+
+
+def _shape_edited(owner):
+    for getter in (lambda o: o.GetSlabShapeEditor(), lambda o: o.SlabShapeEditor):
+        try:
+            editor = getter(owner)
+            if editor is not None:
+                return bool(editor.IsEnabled)
+        except Exception:
+            continue
+    return False
+
+
+def sketch_owner_problem(doc, owner):
+    """Why the sketch of this element is left alone, or None."""
+    if owner is None:
+        return "the sketch has no owner"
+    if not isinstance(owner, (DB.Floor, DB.Ceiling, DB.FootPrintRoof)):
+        try:
+            what = owner.Category.Name
+        except Exception:
+            what = "element"
+        return u"sketch of a {} - edit it by hand".format(what)
+    reason = skip_reason(doc, owner, "owner")
+    if reason:
+        return u"its {} is {}".format(owner.Category.Name.lower().rstrip("s"), reason)
+    if _shape_edited(owner):
+        return "shape edited (Modify Sub Elements) - edit its boundary by hand"
+    return None
+
+
+class SketchPlan(object):
+    """The edge on its axis and its two neighbours trimmed / extended to it:
+    changes = [(curve element, new Line)], how far the corners move (feet),
+    how much the area changes (square feet)."""
+
+    def __init__(self, changes, move, area_change):
+        self.changes = changes
+        self.move = move
+        self.area_change = area_change
+
+
+def _corner_neighbour(doc, sketch, edge, point):
+    """(curve element, index of its end at `point`) - the one other line of
+    the sketch that meets the edge there - or a reason string."""
+    found = []
+    for eid in sketch.GetAllElements():
+        if _eid_int(eid) == _eid_int(edge.Id):
+            continue
+        elem = doc.GetElement(eid)
+        curve = getattr(elem, "GeometryCurve", None)
+        if curve is None:
+            continue
+        for index in (0, 1):
+            try:
+                if curve.GetEndPoint(index).DistanceTo(point) < CORNER_TOL:
+                    found.append((elem, index))
+            except Exception:
+                continue
+    if len(found) != 1:
+        return "it does not meet exactly one other line at each end"
+    if not isinstance(found[0][0].GeometryCurve, DB.Line):
+        return "a neighbouring edge is curved - edit it by hand"
+    return found[0]
+
+
+def _cross(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def sketch_plan(doc, sketch, edge, delta, axis):
+    """SketchPlan that puts `edge` on its axis (turned by `delta` about its
+    midpoint) and trims / extends its two neighbours to it - or a reason
+    string when that cannot be done safely."""
+    line = edge.GeometryCurve
+    start, end = line.GetEndPoint(0), line.GetEndPoint(1)
+    mid = start.Add(end).Multiply(0.5)
+    u, v = plane_basis(axis)
+
+    def flat(p):
+        d = p.Subtract(mid)
+        return (d.DotProduct(u), d.DotProduct(v))
+
+    def back(q):
+        return mid.Add(u.Multiply(q[0])).Add(v.Multiply(q[1]))
+
+    s2, e2 = flat(start), flat(end)
+    c, k = math.cos(delta), math.sin(delta)
+    t = (c * (e2[0] - s2[0]) - k * (e2[1] - s2[1]), k * (e2[0] - s2[0]) + c * (e2[1] - s2[1]))
+    try:
+        tolerance = doc.Application.ShortCurveTolerance
+    except Exception:
+        tolerance = 1.0 / 256
+
+    corners, changes, chain_old, chain_new = [], [], [], []
+    for point in (start, end):
+        found = _corner_neighbour(doc, sketch, edge, point)
+        if not isinstance(found, tuple):
+            return found
+        elem, index = found
+        n_line = elem.GeometryCurve
+        far = flat(n_line.GetEndPoint(1 - index))
+        near = flat(n_line.GetEndPoint(index))
+        w = (near[0] - far[0], near[1] - far[1])
+        denom = _cross(t, w)
+        if abs(denom) < 1e-9 * math.hypot(*w) * math.hypot(*t):
+            return "a neighbouring edge runs along it - edit it by hand"
+        # the axis line through the midpoint (lambda * t) meets the neighbour (far + mu * w)
+        lam = _cross(far, w) / denom
+        corner = (lam * t[0], lam * t[1])
+        length = math.hypot(corner[0] - far[0], corner[1] - far[1])
+        if length < tolerance or (corner[0] - far[0]) * w[0] + (corner[1] - far[1]) * w[1] <= 0:
+            return "a neighbouring edge would become too short - edit it by hand"
+        new_ends = [back(far), back(corner)] if index == 1 else [back(corner), back(far)]
+        changes.append((elem, DB.Line.CreateBound(new_ends[0], new_ends[1])))
+        corners.append(corner)
+        chain_old.append((far, near))
+        chain_new.append((far, corner))
+    new_s, new_e = corners
+    if (new_e[0] - new_s[0]) * (e2[0] - s2[0]) + (new_e[1] - new_s[1]) * (e2[1] - s2[1]) <= 0:
+        return "the edge would turn back on itself - edit it by hand"
+    changes.insert(0, (edge, DB.Line.CreateBound(back(new_s), back(new_e))))
+    move = max(math.hypot(new_s[0] - s2[0], new_s[1] - s2[1]), math.hypot(new_e[0] - e2[0], new_e[1] - e2[1]))
+
+    def chain_area(a_far, p, q, b_far):
+        pts = [a_far, p, q, b_far]
+        return sum(_cross(pts[i], pts[i + 1]) for i in range(3)) / 2.0
+
+    area_change = abs(chain_area(chain_new[0][0], new_s, new_e, chain_new[1][0])
+                      - chain_area(chain_old[0][0], s2, e2, chain_old[1][0]))
+    return SketchPlan(changes, move, area_change)
+
+
+def _host_area(owner):
+    try:
+        return owner.get_Parameter(DB.BuiltInParameter.HOST_AREA_COMPUTED).AsDouble()
+    except Exception:
+        return None
 
 
 # ============================================================================
@@ -271,7 +446,7 @@ def off_axis_warnings(doc):
 class Candidate(object):
     """One element the scan found off axis."""
 
-    def __init__(self, doc, elem, kind, geometry, turn, step, warned, skip):
+    def __init__(self, doc, elem, kind, geometry, turn, step, warned, skip, sketch=None, owner=None, plan=None):
         self.elem = elem
         self.id = elem.Id
         self.kind = kind
@@ -280,9 +455,22 @@ class Candidate(object):
         self.delta, self.deviation = turn
         self.warned = warned
         self.skip = skip
+        self.sketch = sketch          # sketch lines: the sketch, its owner and the fix
+        self.owner = owner
+        self.plan = plan
         half = self.start.DistanceTo(self.end) / 2.0
         self.move_mm = half * abs(math.sin(self.delta)) * FEET_TO_MM
-        self.name = describe(doc, elem)
+        if plan is not None:
+            self.move_mm = plan.move * FEET_TO_MM
+        self.name = describe(doc, owner if owner is not None else elem)
+        if owner is not None:
+            self.name = u"{} (Id {})".format(self.name, _eid_int(owner.Id))
+
+    @property
+    def select_id(self):
+        """What Select in Revit picks - a sketch line only exists in its sketch,
+        so its floor / roof / ceiling instead."""
+        return self.owner.Id if self.owner is not None else self.id
 
     @property
     def title(self):
@@ -293,6 +481,9 @@ class Candidate(object):
         parts = ["Id {}".format(_eid_int(self.id)), u"off {}".format(fmt_deg(self.deviation))]
         if self.skip:
             parts.append(u"skipped: {}".format(self.skip))
+        elif self.plan is not None:
+            parts.append(u"corners move ≤ {}".format(fmt_mm(self.move_mm)))
+            parts.append(u"area change {}".format(fmt_sqm(self.plan.area_change * SQFT_TO_SQM)))
         else:
             parts.append(u"ends move ≤ {}".format(fmt_mm(self.move_mm)))
         if self.warned:
@@ -330,8 +521,42 @@ def _categories(kind):
     return [getattr(DB.BuiltInCategory, n) for n in names if hasattr(DB.BuiltInCategory, n)]
 
 
-def _elements(doc, uidoc, kind, scope):
+SKETCH_OWNER_CATEGORIES = ("OST_Floors", "OST_StructuralFoundation", "OST_Roofs", "OST_Ceilings")
+
+
+def _sketch_lines(doc, uidoc, scope, owners):
+    """Sketch lines in the scope - by their floor / roof / ceiling, since a
+    sketch line is only drawn while its sketch is being edited."""
+    if scope == "model":
+        keep = None
+    elif scope == "selection":
+        keep = set(_eid_int(i) for i in uidoc.Selection.GetElementIds())
+    else:
+        keep = set()
+        for name in SKETCH_OWNER_CATEGORIES:
+            if not hasattr(DB.BuiltInCategory, name):
+                continue
+            try:
+                collector = DB.FilteredElementCollector(doc, doc.ActiveView.Id)
+                keep.update(_eid_int(e.Id) for e in collector.OfCategory(
+                    getattr(DB.BuiltInCategory, name)).WhereElementIsNotElementType())
+            except Exception:
+                continue
+    found = []
+    for line_id in sorted(owners):
+        sketch, owner, eid = owners[line_id]
+        if keep is not None and line_id not in keep and (owner is None or _eid_int(owner.Id) not in keep):
+            continue
+        elem = doc.GetElement(eid)
+        if isinstance(elem, DB.CurveElement):
+            found.append(elem)
+    return found
+
+
+def _elements(doc, uidoc, kind, scope, owners=None):
     """The elements of one kind in the scope: 'model', 'view', 'selection'."""
+    if kind == "sketches":
+        return _sketch_lines(doc, uidoc, scope, owners or {})
     cats = _categories(kind)
     if scope == "selection":
         wanted = set(int(c) for c in cats)
@@ -365,9 +590,10 @@ def scan(doc, uidoc, kinds, scope, max_deg, warned_only, step_deg):
     warned = set()
     for ids in off_axis_warnings(doc):
         warned |= ids
+    owners = sketch_owners(doc) if "sketches" in kinds else {}
     found = []
     for kind in kinds:
-        for elem in _elements(doc, uidoc, kind, scope):
+        for elem in _elements(doc, uidoc, kind, scope, owners):
             is_warned = _eid_int(elem.Id) in warned
             if warned_only and not is_warned:
                 continue
@@ -383,6 +609,21 @@ def scan(doc, uidoc, kinds, scope, max_deg, warned_only, step_deg):
                 if not is_warned:
                     continue          # drawn at an angle on purpose
                 skip = u"off by more than the {} limit".format(fmt_deg(max_deg))
+            if kind == "sketches":
+                sketch, owner, _ = owners[_eid_int(elem.Id)]
+                problem = sketch_owner_problem(doc, owner)
+                if problem and not is_warned:
+                    continue          # stairs, railings, filled regions ... unless Revit warns
+                plan = None
+                if not (skip or problem):
+                    plan = sketch_plan(doc, sketch, elem, turn[0], axis)
+                    if not isinstance(plan, SketchPlan):
+                        problem, plan = plan, None
+                    elif _host_area(owner) and plan.area_change > MAX_AREA_CHANGE * _host_area(owner):
+                        problem = u"the area would change by more than 0.1 % - edit it by hand"
+                found.append(Candidate(doc, elem, kind, geometry, turn, step_deg, is_warned, skip or problem,
+                                       sketch=sketch, owner=owner, plan=plan))
+                continue
             skip = skip or skip_reason(doc, elem, kind)
             found.append(Candidate(doc, elem, kind, geometry, turn, step_deg, is_warned, skip))
     found.sort(key=lambda c: (c.skip is not None, KIND_ORDER[c.kind], -c.deviation))
@@ -411,8 +652,58 @@ class _RollBackOnError(DB.IFailuresPreprocessor):
         return DB.FailureProcessingResult.Continue
 
 
+def _verify(doc, cand):
+    """(status, message) once the change is committed: the element must now
+    be on its axis."""
+    elem = doc.GetElement(cand.id)
+    if elem is None:
+        return FAILED, "Revit replaced the line - check its floor / roof / ceiling"
+    geometry = geometry_of(elem, cand.kind)
+    if geometry is not None:
+        start, end, axis = geometry
+        after = correction(end.Subtract(start), axis, cand.step)
+        if after is not None and after[1] > VERIFY_DEG:
+            return STILL_OFF, u"still off by {}".format(fmt_deg(after[1]))
+    return FIXED, ""
+
+
+def fix_sketch_edge(doc, cand):
+    """Put one sketch edge on its axis inside a sketch edit of its owner,
+    its two neighbours trimmed / extended to it. (status, message)."""
+    pre = _RollBackOnError()
+    scope = DB.SketchEditScope(doc, TITLE)
+    try:
+        scope.Start(cand.sketch.Id)
+    except Exception as error:
+        return FAILED, u"Revit would not open the sketch for editing: {}".format(error)
+    tx = DB.Transaction(doc, TITLE)
+    try:
+        tx.Start()
+        # from the sketch as it is now - an edge fixed before may have moved this one's corners
+        line = cand.elem.GeometryCurve
+        turn = correction(line.GetEndPoint(1).Subtract(line.GetEndPoint(0)), cand.axis, cand.step)
+        plan = sketch_plan(doc, cand.sketch, cand.elem, turn[0], cand.axis) if turn else "already on its axis"
+        if not isinstance(plan, SketchPlan):
+            raise ValueError(plan)
+        for elem, new_line in plan.changes:
+            elem.SetGeometryCurve(new_line, True)
+        tx.Commit()
+        scope.Commit(pre)
+    except Exception as error:
+        if tx.HasStarted() and not tx.HasEnded():
+            tx.RollBack()
+        if scope.IsActive:
+            scope.Cancel()
+        return FAILED, "; ".join(pre.errors) or str(error)
+    if pre.errors:
+        return FAILED, "; ".join(pre.errors)
+    return _verify(doc, cand)
+
+
 def fix_one(doc, cand):
     """Turn one element onto its axis in its own transaction. (status, message)."""
+    if cand.kind == "sketches":
+        return fix_sketch_edge(doc, cand)
     pre = _RollBackOnError()
     tx = DB.Transaction(doc, TITLE)
     options = tx.GetFailureHandlingOptions()
@@ -431,13 +722,7 @@ def fix_one(doc, cand):
         return FAILED, str(error)
     if status != DB.TransactionStatus.Committed:
         return FAILED, "; ".join(pre.errors) or "Revit rolled the change back"
-    geometry = geometry_of(doc.GetElement(cand.id), cand.kind)
-    if geometry is not None:
-        start, end, axis = geometry
-        after = correction(end.Subtract(start), axis, cand.step)
-        if after is not None and after[1] > VERIFY_DEG:
-            return STILL_OFF, u"still off by {}".format(fmt_deg(after[1]))
-    return FIXED, ""
+    return _verify(doc, cand)
 
 
 def fix_all(doc, candidates):
@@ -470,9 +755,10 @@ def summary_text(results, before, after):
     lines.append("")
     lines.append(u"Revit off-axis warnings: {} → {}".format(before, after))
     if after:
-        lines.append("What is left is either not ticked, left alone (pinned, in a group, ...) "
-                     "or something this tool does not turn: lines inside floor / roof / ceiling "
-                     "sketches, levels and other line-based families.")
+        lines.append("What is left is either not ticked, left alone (pinned, in a group, "
+                     "a sketch edge next to a curve ...) or something this tool does not turn: "
+                     "levels, other line-based families, and sketches of stairs, railings, "
+                     "openings or filled regions.")
     lines.append("")
     lines.append("One Undo reverts the whole run.")
     return u"\n".join(lines)
@@ -548,6 +834,8 @@ MAIN_XAML = """
                         <CheckBox x:Name="chkLines" Content="Model &amp; Detail Lines" IsChecked="True" Margin="0,2"/>
                         <CheckBox x:Name="chkSeparations" Content="Room / Area / Space Separation Lines" IsChecked="True" Margin="0,2"/>
                         <CheckBox x:Name="chkBeams" Content="Beams &amp; Braces" IsChecked="True" Margin="0,2"/>
+                        <CheckBox x:Name="chkSketches" Content="Floor / Roof / Ceiling Sketch Lines" IsChecked="True" Margin="0,2"
+                                  ToolTip="The edge is put on the axis and its two neighbours are trimmed / extended to it"/>
 
                         <TextBlock Text="2. WHERE" FontSize="11" FontWeight="Bold" Foreground="#5D4E37" Margin="0,14,0,6"/>
                         <RadioButton x:Name="rbModel" GroupName="scope" Content="Whole model" IsChecked="True" Margin="0,2"/>
@@ -641,7 +929,8 @@ class FixOffAxisWindow(WPFWindow):
         self.rows = []                # (Candidate, CheckBox)
         self.kind_boxes = [("walls", self.chkWalls), ("grids", self.chkGrids),
                            ("refplanes", self.chkRefPlanes), ("lines", self.chkLines),
-                           ("separations", self.chkSeparations), ("beams", self.chkBeams)]
+                           ("separations", self.chkSeparations), ("beams", self.chkBeams),
+                           ("sketches", self.chkSketches)]
         self.btnScan.Click += self.on_scan
         self.btnAll.Click += lambda s, e: self._tick(True)
         self.btnNone.Click += lambda s, e: self._tick(False)
@@ -749,8 +1038,11 @@ class FixOffAxisWindow(WPFWindow):
             forms.alert("Scan first - there is nothing to select.", title=TITLE)
             return
         ids = List[DB.ElementId]()
+        seen = set()
         for cand in cands:
-            ids.Add(cand.id)
+            if _eid_int(cand.select_id) not in seen:
+                seen.add(_eid_int(cand.select_id))
+                ids.Add(cand.select_id)
         self.Close()
         self.uidoc.Selection.SetElementIds(ids)
         try:
@@ -766,7 +1058,8 @@ class FixOffAxisWindow(WPFWindow):
         worst = max(c.deviation for c in cands)
         move = max(c.move_mm for c in cands)
         question = (u"Turn {} element(s) onto the nearest axis?\n\nEach one turns about its own midpoint "
-                    u"by at most {}; its ends move at most {}. Joined elements follow.\n\n"
+                    u"by at most {}; its ends move at most {}. Joined elements follow; a sketch "
+                    u"edge takes its two neighbouring edges with it.\n\n"
                     u"One Undo reverts the whole run.".format(len(cands), fmt_deg(worst), fmt_mm(move)))
         if not forms.alert(question, title=TITLE, yes=True, no=True):
             return
@@ -794,7 +1087,8 @@ class FixOffAxisWindow(WPFWindow):
             "3. Scan - the list shows how far each element is off and how far its ends would "
             "move. Pinned elements, group members and elements owned by another user are "
             "listed but left alone.\n"
-            "4. Fix Ticked - each element turns about its own midpoint onto the nearest axis. "
+            "4. Fix Ticked - each element turns about its own midpoint onto the nearest axis; "
+            "a floor / roof / ceiling sketch edge takes its two neighbouring edges with it. "
             "One Undo reverts the whole run.",
             title=TITLE)
 
