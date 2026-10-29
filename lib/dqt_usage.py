@@ -35,8 +35,8 @@ import datetime
 import threading
 
 # Firebase console > Project settings > General
-FIREBASE_PROJECT_ID = ""
-FIREBASE_API_KEY = ""
+FIREBASE_PROJECT_ID = "pydqt-usage"
+FIREBASE_API_KEY = "AIzaSyC582PtJqTtNVagIs-qGlyDLlgcb1TfpbA"
 COLLECTION = "pydqt_usage"
 
 NOTICE_VERSION = 1
