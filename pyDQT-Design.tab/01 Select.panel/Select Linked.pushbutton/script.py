@@ -13,6 +13,8 @@ Workflow:
 Author: Dang Quoc Truong - DQT
 Copyright by Dang Quoc Truong - DQT (c) 2026
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = 'Select\nLinked'
 __author__ = 'Dang Quoc Truong - DQT'

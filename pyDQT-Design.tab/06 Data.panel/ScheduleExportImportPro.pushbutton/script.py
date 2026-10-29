@@ -5,6 +5,8 @@ Copyright (c) 2025 by Dang Quoc Truong (DQT)
 
 DiRoots-style: Read data directly from elements, not from schedule cells
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Schedule\nLink Pro"
 __doc__ = "Export Schedule to Excel, edit and import back"

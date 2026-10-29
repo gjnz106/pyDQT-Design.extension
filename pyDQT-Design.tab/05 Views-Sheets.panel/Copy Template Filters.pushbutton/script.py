@@ -19,6 +19,8 @@ A view template applies its filters to its views only when it controls
 "V/G Overrides Filters"; the tool can switch that on in the targets that
 do not. Everything happens in one transaction - one Undo.
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 __title__ = "Copy\nFilters"
 __author__ = "DQT"
 

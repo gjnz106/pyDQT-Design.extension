@@ -10,6 +10,8 @@ Original regions are deleted only after the merged one is created.
 
 Copyright (c) 2026 by Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Merge Fill\nRegion"
 __author__ = "Dang Quoc Truong (DQT)"

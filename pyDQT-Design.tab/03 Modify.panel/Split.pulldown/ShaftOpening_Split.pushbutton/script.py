@@ -130,6 +130,8 @@ in memory and stacking passes in one session is itself a crash factor.
 
 Dang Quoc Truong - DQT (c) 2026
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Split\nShaft"
 __author__ = "DQT"

@@ -8,6 +8,8 @@ The section box is applied to a 3D view that belongs to the CURRENT user
 fighting over one shared "{3D}" view (which causes worksharing ownership
 conflicts).
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 from pyrevit import revit, DB, UI
 from pyrevit.revit import Transaction
 

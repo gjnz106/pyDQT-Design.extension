@@ -4,6 +4,8 @@ Split Ceiling Tool
 Splits a ceiling with multiple disconnected boundaries into separate individual ceilings.
 Dang Quoc Truong - DQT (c) 2026
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Split\nCeiling"
 __author__ = "DQT"

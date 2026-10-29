@@ -142,6 +142,18 @@ to the same location, and press the pyRevit **Reload** button.
 | A tool crashes with an IronPython error | Confirm the active engine is IronPython (pyRevit Settings → Engines). Screenshot the traceback and send it to DQT. |
 | Buttons show without icons | Extraction was incomplete or icon files were blocked. Right-click the ZIP → Properties → **Unblock** before extracting, then extract again. |
 
+## Usage log
+
+pyDQT records how its tools are used. Each time a tool runs, it sends the Revit
+and Windows user names, the computer name, the Revit, pyRevit and pyDQT
+versions, where pyDQT is installed, the tool's name and the time to the pyDQT
+usage log. Project names, model content and files are never sent. The first time
+a tool runs, a notice says this. It is shown once, and usage logging cannot be
+turned off. If the log cannot be reached, records wait in
+`%APPDATA%\pyDQT\usage_queue.jsonl` and are sent later. Logging never stops a
+tool. The code is in `lib/dqt_usage.py`; setup and the dashboard are described
+in pyDQT-Manage's `usage-tracking/README.md`.
+
 ## License
 
 See the [LICENSE](LICENSE) file.

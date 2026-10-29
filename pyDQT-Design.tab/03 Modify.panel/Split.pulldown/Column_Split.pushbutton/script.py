@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 __title__ = "Split Columns"
 __doc__ = "Split columns at selected levels with hosted elements report"
 

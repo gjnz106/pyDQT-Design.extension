@@ -10,6 +10,8 @@ Remove : pick any related elements; coping is removed in BOTH directions
 
 Copyright (c) 2026 by Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Auto\nCoping"
 __author__ = "Dang Quoc Truong (DQT)"

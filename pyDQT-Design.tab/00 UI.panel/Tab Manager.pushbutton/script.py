@@ -4,6 +4,8 @@ Extension Tab Manager
 Manage visibility of Extension/Add-in tabs in Revit
 Copyright (c) 2025 by Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __author__ = "Dang Quoc Truong (DQT)"
 __version__ = "1.0.0"

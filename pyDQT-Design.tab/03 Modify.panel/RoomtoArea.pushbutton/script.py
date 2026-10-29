@@ -11,6 +11,8 @@ Author: Dang Quoc Truong (DQT)
 Website: https://github.com/DangQuocTruong
 License: All rights reserved - pyDQT Suite
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Room To\nArea"
 __author__ = "Dang Quoc Truong (DQT)"
