@@ -29,8 +29,9 @@
     </p>
     <p>
       It handles <b>Walls</b>, <b>Grids</b>, <b>Reference Planes</b>, <b>Model &amp; Detail Lines</b>,
-      <b>Room / Area / Space Separation Lines</b> and <b>Beams &amp; Braces</b> in one window. It
-      replaces the old <i>Fix Element Off Axis</i> pulldown (one button per category).
+      <b>Room / Area / Space Separation Lines</b>, <b>Beams &amp; Braces</b> and the
+      <b>sketch lines of floors, roofs and ceilings</b> in one window. It replaces the old
+      <i>Fix Element Off Axis</i> pulldown (one button per category).
     </p>
   </div>
 
@@ -70,6 +71,42 @@
   </div>
 
   <div class="card">
+    <h2>Sketch lines of floors, roofs and ceilings</h2>
+    <p class="lede">
+      A sketch line is one edge of a closed boundary, so it cannot turn on its own - its ends
+      would come away from the next edges and Revit would not let the sketch finish. The tool
+      does what <b>Align</b> + <b>Trim/Extend to Corner</b> do by hand in Edit Boundary: the edge
+      goes onto the axis through its own midpoint and its <b>two neighbouring edges are trimmed or
+      extended</b> to meet it, inside a sketch edit of that floor, roof (footprint) or ceiling.
+    </p>
+    <dl class="kv">
+      <dt class="v-dark">In the list</dt><dd>named after its floor / roof / ceiling and its Id, with how
+        far the <b>corners</b> move and how much the <b>area</b> changes - usually nothing, since the
+        corners move along neighbours square to the edge</dd>
+      <dt class="v-dark">Where</dt><dd><i>Visible in the active view</i> and <i>Current selection</i>
+        go by the floor / roof / ceiling: select a floor to fix its sketch</dd>
+      <dt class="v-dark">Select in Revit</dt><dd>selects the floor / roof / ceiling (a sketch line can
+        only be selected inside its sketch)</dd>
+      <dt class="v-dark">Checked</dt><dd>each edge is a sketch edit of its own; if Revit will not
+        finish the sketch it is cancelled and named in the summary. Two off-axis edges side by side
+        are fixed one after the other, the second from where the first left it</dd>
+    </dl>
+    <p>Left alone, to edit by hand:</p>
+    <dl class="kv">
+      <dt class="v-gold">Curved neighbour</dt><dd>an edge next to an arc</dd>
+      <dt class="v-gold">Neighbour along it</dt><dd>the next edge runs in the same direction (a split
+        edge) - there is no corner to move</dd>
+      <dt class="v-gold">Too short</dt><dd>a neighbouring edge would become too short or turn back</dd>
+      <dt class="v-gold">Third line at a corner</dt><dd>a slope arrow or another line meets the edge
+        there</dd>
+      <dt class="v-gold">Area over 0.1 %</dt><dd>the fix would change the area by more than 0.1 %</dd>
+      <dt class="v-gold">Shape edited</dt><dd>a floor or roof with Modify Sub Elements points</dd>
+      <dt class="v-gold">Other sketches</dt><dd>stairs, railings, openings, filled regions - listed
+        only when Revit warns about them</dd>
+    </dl>
+  </div>
+
+  <div class="card">
     <h2>Left alone (listed in orange)</h2>
     <dl class="kv">
       <dt class="v-gold">Pinned</dt><dd>unpin it first if it should be fixed</dd>
@@ -90,8 +127,12 @@
       the rest still go through.
     </div>
     <div class="box tip">
-      Not handled: lines inside a floor / roof / ceiling sketch (edit the sketch), levels, and
-      other line-based families. Their warnings stay in the "after" count.
+      Not handled: levels, other line-based families, and the sketches of stairs, railings,
+      openings and filled regions. Their warnings stay in the "after" count.
+    </div>
+    <div class="box fixed">
+      <b>New in v1.1 - sketch lines.</b> The off-axis edges of floor, roof and ceiling boundaries,
+      fixed the way Align + Trim/Extend fix them by hand.
     </div>
     <div class="box warn">
       Ends of long elements move furthest - a 10 m wall off by 0.05&deg; moves each end about
