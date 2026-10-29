@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 __title__   = "Select Similar\nType (View)"
 __author__  = "Dang Quoc Truong - DQT"
 __doc__     = """Select Similar: Type (in View)

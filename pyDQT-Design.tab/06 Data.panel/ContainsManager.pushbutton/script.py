@@ -3,6 +3,8 @@
 Contains Manager - Find elements in Rooms/Areas/Spaces and assign parameters
 Copyright (c) 2024 Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Contains\nManager"
 __author__ = "Dang Quoc Truong (DQT)"

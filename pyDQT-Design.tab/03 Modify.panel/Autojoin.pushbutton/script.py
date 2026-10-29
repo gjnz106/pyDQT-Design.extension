@@ -6,6 +6,8 @@ Priority Category will CUT Join With Category.
 Switch button swaps cut direction.
 Save/Load rule sets for reuse across sessions.
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Auto Join\nElements"
 __author__ = "DQT Tools"

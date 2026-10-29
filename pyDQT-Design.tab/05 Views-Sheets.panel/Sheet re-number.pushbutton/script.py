@@ -1,4 +1,6 @@
 # Import necessary libraries
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 from pyrevit import revit, DB, forms
 
 # Get the current document

@@ -31,6 +31,8 @@ Scope option - scan all elements or only current selection.
 
 Copyright (c) 2026 by Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Snap to\nGrid"
 __author__ = "DQT"

@@ -8,6 +8,8 @@ mappings, and needs no external Snippets dependency or per-language files.
 
 Dang Quoc Truong - DQT (c) 2026
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__     = "Ribbon Name\nManager"
 __author__    = "Dang Quoc Truong (DQT)"

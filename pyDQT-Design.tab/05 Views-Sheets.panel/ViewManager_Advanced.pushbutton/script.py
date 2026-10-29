@@ -3,6 +3,8 @@
 Enhanced view management with summary cards and modern layout
 Copyright: Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Advanced\nView Manager"
 __author__ = "Dang Quoc Truong (DQT)"

@@ -36,6 +36,8 @@ anything.
 
 v1.1: Floor / Roof / Ceiling Sketch Lines.
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 __title__ = "Fix\nOff Axis"
 __author__ = "DQT"
 

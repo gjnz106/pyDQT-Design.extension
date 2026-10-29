@@ -10,6 +10,8 @@ IronPython modeless windows.
 
 Dang Quoc Truong - DQT (c) 2025
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 __title__ = "BCF\nReader"
 __author__ = "Dang Quoc Truong"
 

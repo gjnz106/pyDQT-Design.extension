@@ -5,6 +5,8 @@ CLEANED - Direct to Sheet List
 
 Copyright (c) Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 import sys
 import os

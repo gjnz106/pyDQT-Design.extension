@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Material Statistics - With Element Finder (Revit 2024-2027)"""
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 from pyrevit import revit, DB
 from pyrevit import forms

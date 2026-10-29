@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Advanced Schedule Duplicator with Template Options"""
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 import clr
 clr.AddReference('RevitAPI')

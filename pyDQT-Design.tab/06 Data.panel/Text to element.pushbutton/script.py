@@ -8,6 +8,8 @@ room names, area values, or other annotations to model elements.
 Author: DQT
 Compatible with: Revit 2019+
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Text to\nElement"
 __doc__ = "Transfer text values to elements that intersect with the text annotation"

@@ -19,6 +19,8 @@ All rights reserved.
 Author: Dang Quoc Truong (DQT)
 License: All rights reserved - pyDQT Suite
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Wall Fill\nRegion"
 __author__ = "Dang Quoc Truong (DQT)"

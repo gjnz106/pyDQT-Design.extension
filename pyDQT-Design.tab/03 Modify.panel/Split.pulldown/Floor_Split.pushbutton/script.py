@@ -4,6 +4,8 @@ Split Floor Tool
 Splits a floor with multiple disconnected boundaries into separate individual floors.
 Dang Quoc Truong - DQT (c) 2026
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Split Floor"
 __author__ = "DQT"

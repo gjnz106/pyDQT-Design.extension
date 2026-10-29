@@ -7,6 +7,8 @@ Doors, Windows
 
 Copyright (c) 2025 by Dang Quoc Truong (DQT)
 """
+try: __import__("dqt_usage").log_use(__file__)  # pyDQT usage log
+except Exception: pass
 
 __title__ = "Revise\nBase"
 __author__ = "DQT"
