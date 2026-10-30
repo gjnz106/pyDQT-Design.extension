@@ -23,7 +23,9 @@ __title__ = "Tag\nChecker"
 __author__ = "Dang Quoc Truong (DQT)"
 __doc__ = "Check if elements are tagged in current view. Highlight untagged elements and far-away tags."
 # Keep the IronPython engine alive so the modeless window's event handlers and
-# ExternalEvent keep working after the script returns.
+# ExternalEvent keep working after the script returns. pyRevit reads this flag
+# from the script only when the bundle has no bundle.yaml (or with "read script
+# metadata" on) - "engine: persistent: true" in bundle.yaml always counts.
 __persistentengine__ = True
 
 # ===========================================================================
