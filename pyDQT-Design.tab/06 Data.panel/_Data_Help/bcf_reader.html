@@ -70,6 +70,13 @@
       This tool opens a modeless window (pyRevit's WPFWindow pattern), so
       you can keep it open while navigating and editing the model.
     </div>
+    <div class="box fixed">
+      <b>Fixed - selecting an issue after import.</b> Clicking a card showed
+      <span class="code">Select error: name 'COLOR_CARD_SEL' is not defined</span> and no
+      details. pyRevit had stopped keeping the tool's engine alive once the window was open;
+      the tool now asks for it in its <span class="code">bundle.yaml</span>, so cards, filters
+      and the detail panel keep working for as long as the window is open.
+    </div>
   </div>
 
   <div class="pagenav">

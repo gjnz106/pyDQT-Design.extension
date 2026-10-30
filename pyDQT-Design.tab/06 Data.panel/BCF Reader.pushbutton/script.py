@@ -16,10 +16,11 @@ __title__ = "BCF\nReader"
 __author__ = "Dang Quoc Truong"
 
 # CRITICAL for modeless forms in pyRevit IronPython:
-# Without this flag, pyRevit tears down the IronPython engine after the
-# script returns, destroying the modeless window and causing crashes on
-# any subsequent interaction. This flag keeps the engine alive for the
-# lifetime of the window.
+# Without a persistent engine, pyRevit deletes this script's globals once it
+# returns, so every later click fails ("name 'COLOR_CARD_SEL' is not
+# defined"). pyRevit reads this flag from the script only when the bundle has
+# no bundle.yaml (or with "read script metadata" on) - the setting that
+# always counts is "engine: persistent: true" in bundle.yaml. Keep both.
 __persistentengine__ = True
 
 import os
